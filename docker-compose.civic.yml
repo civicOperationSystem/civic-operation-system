@@ -1,0 +1,86 @@
+name: civicos
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: civicos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-civicos-local-only-not-for-deployments}
+    volumes:
+      - civic-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d civicos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  provision:
+    profiles: ["setup"]
+    build:
+      context: ./civicos-backend
+      dockerfile: Dockerfile.civic
+    command: ["node", "dist/scripts/civic-init.js"]
+    environment:
+      CIVIC_DATABASE: civicos
+      CIVIC_DB_HOST: postgres
+      CIVIC_DB_PORT: 5432
+      CIVIC_ADMIN_DATABASE_URL: ${CIVIC_ADMIN_DATABASE_URL:-}
+      CIVIC_DATABASE_URL: ${CIVIC_DATABASE_URL:-}
+      CIVIC_DB_PASSWORD: ${CIVIC_DB_PASSWORD:-}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-civicos-local-only-not-for-deployments}
+      CIVIC_ADMIN_EMAIL: ${CIVIC_ADMIN_EMAIL:-}
+      CIVIC_SLUG: ${CIVIC_SLUG:-}
+      CIVIC_NAME: ${CIVIC_NAME:-Your Community}
+      CIVIC_DOMAIN: ${CIVIC_DOMAIN:-}
+      CIVIC_CONTACT: ${CIVIC_CONTACT:-}
+  backend:
+    build:
+      context: ./civicos-backend
+      dockerfile: Dockerfile.civic
+    environment:
+      NODE_ENV: production
+      CIVIC_DATABASE: civicos
+      CIVIC_DB_HOST: postgres
+      CIVIC_DB_PORT: 5432
+      CIVIC_DATABASE_URL: ${CIVIC_DATABASE_URL:-}
+      CIVIC_DB_PASSWORD: ${CIVIC_DB_PASSWORD:-}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      SUPABASE_URL: ${SUPABASE_URL:?Set SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?Set SUPABASE_ANON_KEY}
+      CIVIC_PLATFORM_ADMIN_EMAIL: ${CIVIC_PLATFORM_ADMIN_EMAIL:-${CIVIC_ADMIN_EMAIL:-}}
+    ports:
+      - "127.0.0.1:3030:3030"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3030/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+  frontend:
+    build:
+      context: ./civicos-platform/frontend
+      dockerfile: Dockerfile.civic
+      args:
+        NEXT_PUBLIC_CIVIC_MAP_URL: ${NEXT_PUBLIC_CIVIC_MAP_URL:-http://localhost:3101/civic}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?Set NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?Set NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    environment:
+      CIVIC_API_URL: http://backend:3030
+    ports:
+      - "127.0.0.1:3100:3100"
+    depends_on:
+      backend:
+        condition: service_healthy
+  map:
+    build:
+      context: ./civicos-map
+      dockerfile: Dockerfile.civic
+      args:
+        NEXT_PUBLIC_CIVIC_PARENT_ORIGINS: ${NEXT_PUBLIC_CIVIC_PARENT_ORIGINS:-http://localhost:3100}
+    environment:
+      CIVIC_API_URL: http://backend:3030
+    ports:
+      - "127.0.0.1:3101:3101"
+    depends_on:
+      backend:
+        condition: service_healthy
+volumes:
+  civic-data:

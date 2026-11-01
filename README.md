@@ -1,1 +1,190 @@
-# civic-operation-system
+# CivicOS
+
+An open community operations platform with three connected experiences on one permission-aware backend.
+
+## Projects
+
+| Project | Responsibility |
+| --- | --- |
+| [civicos-backend](civicos-backend/) | Express/Sequelize API, authentication, PostgreSQL tenant isolation, content and request workflows |
+| [civicos-platform](civicos-platform/) | Next.js public portal, staff operations and mobile-friendly field workspace |
+| [civicos-map](civicos-map/) | MapLibre GIS, authorized layers, clustering, filters, location selection and geolocation |
+
+Legacy chat, collaborative documents, task microservices, demo SaaS endpoints, and washroom/Supabase features have been removed. CivicOS does not depend on those services.
+
+## Local launch
+
+Requires Docker Desktop with Compose v2.20+.
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Edit `.env` before first launch:
+
+```dotenv
+POSTGRES_PASSWORD=choose-a-strong-database-owner-password
+CIVIC_DB_PASSWORD=choose-a-different-application-database-password
+CIVIC_ADMIN_DATABASE_URL=
+CIVIC_DATABASE_URL=
+JWT_SECRET=replace-with-a-random-secret-at-least-32-characters-long
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-supabase-publishable-or-anon-key
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-publishable-or-anon-key
+CIVIC_PLATFORM_ADMIN_EMAIL=you@example.org
+CIVIC_ADMIN_EMAIL=admin@example.org
+CIVIC_SLUG=town-a
+CIVIC_NAME=Town A
+```
+
+These are placeholders, not deployment credentials. Keep `.env` private and out of Git. `CIVIC_PLATFORM_ADMIN_EMAIL` is the single platform owner who can create organizations and appoint their first administrators; for local Compose runs it defaults to `CIVIC_ADMIN_EMAIL` if left blank. `CIVIC_ADMIN_EMAIL` is only used when creating the initial organization through the setup command. Both sign in with Supabase magic links, not CivicOS passwords.
+
+```powershell
+docker compose up -d postgres
+docker compose --profile setup run --build --rm provision
+docker compose up -d --build backend frontend map
+docker compose ps
+```
+
+Stop if provisioning fails. Repeating provisioning for an existing slug preserves its users, settings and request data. Changing `POSTGRES_PASSWORD` in `.env` does **not** change an initialized PostgreSQL password.
+
+| Experience | Address |
+| --- | --- |
+| Public portal | http://localhost:3100/portal/town-a |
+| Staff operations | http://localhost:3100/staff?org=town-a |
+| Field workspace | http://localhost:3100/field?org=town-a |
+| Community map | http://localhost:3101/civic?org=town-a |
+
+Visit http://localhost:3100/platform to sign in as the configured platform owner and create organizations. That owner appoints one Bottom admin for each organization; Bottom admins sign in at the organization’s staff URL and add/manage only their own staff from **People & roles**. The field app is online and mobile-friendly; it does not provide offline synchronization.
+
+### Supabase email sign-in
+
+The platform owner, staff, and field login screens send one-time email links using Supabase Auth. In the Supabase dashboard, configure the site URL and allowlist `http://localhost:3100/**` for local development. For production, allowlist `https://your-frontend-domain.example/**`; this supports the `/platform` callback and organization-specific staff/field URLs without adding every organization separately. Configure an SMTP provider before production so your organization controls reliable email delivery. Use the same project URL and publishable/anon key in the `SUPABASE_*` and `NEXT_PUBLIC_SUPABASE_*` settings; never put a Supabase service-role key in the frontend.
+
+Staff email addresses must first be added to that organization's **People & roles** list. Supabase can create the authentication identity when the member follows a link, but CivicOS only grants access after matching the verified email to an active member in the selected organization. A Supabase account alone does not grant access. Residents can still submit public service requests without an account.
+
+### Supabase PostgreSQL
+
+For a Supabase database, set both connection URLs:
+
+- `CIVIC_ADMIN_DATABASE_URL`: a privileged database connection used only by the provisioner for schema migrations and creating/updating the `civic_app` role.
+- `CIVIC_DATABASE_URL`: the non-owner `civic_app` connection used by the running API. The provisioner reads its encoded password from this URL unless `CIVIC_DB_PASSWORD` is set separately.
+
+Use the exact URLs from the Supabase project's **Connect** page; percent-encode reserved characters in passwords. For a persistent backend on an IPv4-only network, Supabase's shared **session pooler** is IPv4-compatible. A direct connection is IPv4-compatible only when the project's IPv4 add-on is enabled. The backend requires TLS and verifies the server certificate. The application connection must use `civic_app`, never the database owner or a `BYPASSRLS` role.
+
+When using Supabase, leave the local `POSTGRES_PASSWORD` and `CIVIC_DB_PASSWORD` empty if they are not needed, set the two URLs above, then provision and start only the application services:
+
+```powershell
+docker compose --profile setup run --build --rm provision
+docker compose up -d --build backend frontend map
+```
+
+For local PostgreSQL, leave both URL settings empty and follow the local launch commands above.
+
+`compose.yml` includes `docker-compose.civic.yml`, so both `docker compose ...` and `docker compose -f docker-compose.civic.yml ...` work.
+
+### Updating an existing deployment
+
+Back up PostgreSQL first. Do not delete database volumes.
+
+```powershell
+docker compose --profile setup run --build --rm -e CIVIC_MIGRATE_ONLY=true provision
+docker compose up -d --build backend frontend map
+```
+
+This updates the schema without creating or resetting organization records. Source changes are not reflected in already-built containers until they are rebuilt.
+
+### Platform owner and organization administration
+
+The configured `CIVIC_PLATFORM_ADMIN_EMAIL` is the initial global platform owner. Only a verified Supabase identity matching that backend environment value can sign in at `/platform`, list organization names/slugs/domains, and create organization workspaces. When creating an organization, the platform owner appoints its first Bottom admin by email. Organization data is created under PostgreSQL row-level security in one transaction. Each Bottom admin can add, activate, deactivate, and assign roles to members only inside their own organization; tenant administrators cannot use platform-owner endpoints.
+
+For local development, the first Compose setup may still create a starter organization using `CIVIC_ADMIN_EMAIL` and `CIVIC_SLUG`; afterward, the platform owner can create further organizations from `/platform`. For Vercel, run the schema-only setup once from a trusted environment before deploying:
+
+```powershell
+docker compose --profile setup run --build --rm `
+  -e CIVIC_MIGRATE_ONLY=true `
+  provision
+```
+
+Provide `CIVIC_ADMIN_DATABASE_URL` and `CIVIC_DATABASE_URL` through the trusted environment for this migration; the runtime password is read from the URL unless `CIVIC_DB_PASSWORD` is set separately. The admin URL is needed only for this setup task, not as a Vercel runtime variable.
+
+### Deploying on Vercel
+
+No Supabase Edge Functions are required. Supabase provides PostgreSQL and Auth; CivicOS keeps its permission checks and API in the Express backend. Vercel runs that backend as a serverless Express function. Deploy the three experiences as separate Vercel projects from this repository:
+
+| Vercel project | Root directory | Purpose |
+| --- | --- | --- |
+| CivicOS frontend | `civicos-platform/frontend` | Public portal, platform-owner console, staff operations, field app |
+| CivicOS API | `civicos-backend` | Express API and tenant-aware backend |
+| CivicOS map | `civicos-map` | Interactive MapLibre application |
+
+Set these project environment variables:
+
+- **CivicOS API:** `CIVIC_DATABASE_URL` (Supabase `civic_app` runtime role), `JWT_SECRET` (random, at least 32 characters), `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `CIVIC_PLATFORM_ADMIN_EMAIL`.
+- **CivicOS frontend:** `CIVIC_API_URL` (the API deployment origin, without a path), `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_CIVIC_MAP_URL` (the map deployment URL ending in `/civic`).
+- **CivicOS map:** `CIVIC_API_URL` (same API deployment origin) and `NEXT_PUBLIC_CIVIC_PARENT_ORIGINS` (the frontend’s production origin).
+
+The frontend’s Next.js rewrite proxies `/api/civic` to the backend, so browser API requests remain same-origin and the API does not need public CORS access. Use HTTPS Vercel and Supabase URLs in production. Keep `CIVIC_ADMIN_DATABASE_URL` out of Vercel runtime variables; use it only in the trusted, one-time schema migration/provisioning environment. Set the Supabase Auth site URL to your frontend domain and allowlist `https://your-frontend-domain.example/**`. Add the production frontend domain to the map’s allowed parent origins.
+
+Vercel serverless functions can scale out, so the API uses a small per-instance PostgreSQL pool. Choose a Supabase connection/pooler URL appropriate for serverless deployments, and do not expose the database owner connection to the API.
+
+For a custom domain:
+
+1. Verify ownership and configure DNS through your domain provider.
+2. Set `CIVIC_DOMAIN` to the verified hostname when provisioning a new organization.
+3. Put a trusted HTTPS reverse proxy in front of the platform. The portal resolves the organization's registered hostname without requiring a resident account.
+4. Set `NEXT_PUBLIC_CIVIC_MAP_URL` to the HTTPS map address and add all authorized platform origins to `NEXT_PUBLIC_CIVIC_PARENT_ORIGINS` (comma-separated), then rebuild the frontend and map.
+
+Domain registration and TLS certificate issuance are deployment responsibilities, not automatic application features. Ports bind to loopback by default; PostgreSQL is not exposed externally.
+
+## Features
+
+- Organization name, logo, branding, timezone, locale, locations, departments, services, categories, users and configurable roles.
+- Supabase one-time email sign-in for staff and field workers, with verified identities linked to organization-scoped CivicOS memberships.
+- Account-free published services, announcements, events, projects, facilities, HTTPS document links, emergency notices and contact information.
+- Resident requests with descriptions, locations, coordinates, optional PNG/JPEG/WebP photos (2 MB), contact details, and organization-controlled anonymous reporting.
+- Cryptographically random 128-bit tracking references. Tracking uses a POST body and exposes only category, public status and dates; not staff names, notes, contacts, assignments or photos.
+- Configurable workflow states and allowed transitions. Every submission, assignment and transition stores an immutable actor/status/timestamp/notes record.
+- Assigned field workers can enter only field-enabled states. Staff alone perform review and verification by default. Disabled accounts lose access on their next API request.
+- Publishing and editing community information, member role changes, activation/deactivation and explicit public request-map visibility.
+- Authorized GIS layers, clustered points, search, status/type filters, zoom-to-results, resident pin selection and an accessible location list.
+
+Locale configuration controls document language and date/time formatting. Interface copy is currently English. Map data is capped at the latest 5,000 authorized locations with an explicit notice; the location list shows the first 200 matches. Request lists are paginated in batches of 100.
+
+## Validation
+
+Use Node.js 24 and an **isolated test database**, never the deployment database.
+
+```powershell
+docker run --detach --name civicos-tests -p 127.0.0.1:15433:5432 -e POSTGRES_DB=civicos_test -e POSTGRES_PASSWORD=civicos-test-local-only postgres:15
+docker exec civicos-tests pg_isready -U postgres
+```
+
+Wait until PostgreSQL accepts connections. Each project has `build` and `test` scripts:
+
+```powershell
+Set-Location .\civicos-backend
+npm ci
+npm run build
+npm test
+Set-Location ..\civicos-platform\frontend
+npm ci
+npm test
+npx playwright install chromium
+npm run test:e2e
+npm run build
+Set-Location ..\..\civicos-map
+npm ci
+npm test
+npm run build
+```
+
+The browser test starts temporary servers on ports 3330, 3310 and 3311, creates a disposable organization in `civicos_test`, exercises resident reporting, staff dispatch, mobile field completion, verification, organization settings, private-safe tracking and the map, then removes its fixture data. Run backend and browser tests sequentially because they rotate the test-only database role's password.
+
+```powershell
+docker stop civicos-tests
+docker rm civicos-tests
+```
+
+Before public deployment, configure HTTPS, backups, monitoring and deployment-scale rate limiting. Never run the application using the PostgreSQL owner, a superuser, or a `BYPASSRLS` role; the backend refuses those roles.

@@ -1,0 +1,41 @@
+{
+  "name": "civicos-backend",
+  "version": "1.0.0",
+  "description": "Permission-aware CivicOS operations API with PostgreSQL tenant isolation",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "npm run build && node dist/index.js --port 3030",
+    "dev": "nodemon --exec ts-node index.ts",
+    "build": "tsc && node scripts/copy-schema.mjs",
+    "civic:init": "ts-node scripts/civic-init.ts",
+    "test:civic": "vitest run tests/civic.test.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^5.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "pg": "^8.16.3",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.37.7"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^25.5.0",
+    "@types/supertest": "^6.0.3",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.1.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.2",
+    "vitest": "^3.2.4"
+  }
+}
