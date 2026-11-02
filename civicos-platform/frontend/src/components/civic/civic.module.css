@@ -123,12 +123,15 @@
 .fieldEvidence { display:grid; gap:12px; margin:18px 0; padding:16px; border:1px solid #dfe7ea; border-radius:10px; background:#f7f9fa; }
 .fieldEvidence h3 { margin:0; }
 .fieldEvidence .mapFrame { height:380px; }
+.evidencePrompt { color:#176f64; font-size:11px; font-weight:700; }
 .publicTickets { margin-top:28px; }
 .publicTickets h3 { margin-bottom:12px; }
 .publicTickets .card { display:flex; align-items:flex-start; width:100%; flex-direction:column; gap:7px; text-align:left; }
 .publicTickets .card strong { font-size:15px; }
 .publicTickets .card small { color:#58717b; }
 .publicTickets .card span:last-child { color:#176f64; font-size:12px; font-weight:700; }
+.hubGroups { display:grid; gap:26px; }
+.hubGroups>section>h3 { margin-bottom:12px; color:#315d59; }
 .chatLayout { min-height:560px; height:min(72vh,820px); display:grid; grid-template-columns:270px minmax(0,1fr); border:1px solid #dfe7ea; border-radius:12px; overflow:hidden; background:#fff; }
 .chatSidebar { display:flex; flex-direction:column; min-height:0; gap:10px; padding:18px; border-right:1px solid #e4ebee; overflow-y:auto; }
 .chatSidebar h3 { margin:10px 0 0; font-size:12px; }

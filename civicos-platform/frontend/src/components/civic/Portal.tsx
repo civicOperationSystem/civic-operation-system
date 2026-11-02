@@ -6,7 +6,7 @@ import MapEmbed from './MapEmbed';
 import styles from './civic.module.css';
 
 const kinds = ['all', 'service', 'announcement', 'event', 'project', 'facility', 'document', 'emergency', 'infrastructure'];
-type PublicCalendarRequest = { id: string; title: string; category: string | null; status: string; created_at: string };
+type PublicCalendarRequest = { id: string; title: string; category: string | null; status: string; created_at: string; completed_at: string | null };
 type PublicRequestDetail = PublicCalendarRequest & {
   description: string; location: string; longitude: number | null; latitude: number | null; updated_at: string;
   photo: string | null; field_photo: string | null; history: { status: string; timestamp: string }[];
@@ -94,6 +94,17 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
     } finally { setBusy(false); }
   }
   const settings = portal?.settings;
+  const hubGroups = content.filter(item => kind === 'all' || item.kind === kind).reduce<{ key: string; label: string; items: CivicRecord[] }[]>((groups, item) => {
+    const date = new Date(item.created_at);
+    const key = new Intl.DateTimeFormat('en-CA', { timeZone: settings?.timezone, year: 'numeric', month: '2-digit' }).format(date);
+    let group = groups.find(current => current.key === key);
+    if (!group) {
+      group = { key, label: new Intl.DateTimeFormat(settings?.language, { timeZone: settings?.timezone, year: 'numeric', month: 'long' }).format(date), items: [] };
+      groups.push(group);
+    }
+    group.items.push(item);
+    return groups;
+  }, []);
   const visibleOrganizations = organizations.filter(organization =>
     `${organization.name} /portal/${organization.slug}`.toLowerCase().includes(organizationQuery.trim().toLowerCase()));
   return <main className={styles.shell} style={{ '--civic-accent': settings?.color || '#0d9488' } as React.CSSProperties}>
@@ -146,13 +157,14 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         {view === 'overview' && <>
           <div className={styles.sectionTitle}><div><p className={styles.eyebrow}>WHAT'S HAPPENING</p><h2>Your community hub</h2></div>
             <label>Show<select value={kind} onChange={event => setKind(event.target.value)}>{kinds.map(type => <option key={type} value={type}>{type === 'all' ? 'All information' : type}</option>)}</select></label></div>
-          <div className={styles.cards}>{content.filter(item => kind === 'all' || item.kind === kind).map(item => <article className={styles.card} key={item.id}>
+          <div className={styles.hubGroups}>{hubGroups.map(group => <section key={group.key}><h3>{group.label}</h3><div className={styles.cards}>{group.items.map(item => <article className={styles.card} key={item.id}>
             <span className={styles.tag}>{item.kind}</span><h3>{item.title}</h3><p>{item.description}</p>
+            <small>Published {displayDate(item.created_at, portal.settings)}</small>
             {item.location && <small>{item.location}</small>}
             {item.url && <a href={item.url} target="_blank" rel="noopener noreferrer">Open document or information ↗</a>}
-          </article>)}</div>
+          </article>)}</div></section>)}</div>
           {!content.length && <div className={styles.empty}><h3>Your community hub is ready.</h3><p>Published services, events, facilities and announcements will appear here.</p></div>}
-          {!!calendarRequests.length && <section className={styles.publicTickets}><h3>Published community work</h3><div className={styles.cards}>{calendarRequests.map(record => <button key={record.id} className={styles.card} onClick={() => void selectPublicRequest(record.id)}><span className={styles.tag}>{record.status}</span><strong>{record.title}</strong><small>{record.category || 'Community request'}</small><span>Open ticket details</span></button>)}</div></section>}
+          {!!calendarRequests.length && <section className={styles.publicTickets}><h3>Published community work</h3><div className={styles.cards}>{calendarRequests.map(record => <button key={record.id} className={styles.card} onClick={() => void selectPublicRequest(record.id)}><span className={styles.tag}>{record.status}</span><strong>{record.title}</strong><small>{record.category || 'Community request'}</small>{record.completed_at && <small>Completed {displayDate(record.completed_at, portal.settings)}</small>}<span>Open ticket details</span></button>)}</div></section>}
           <section className={styles.contact}><h3>Here to help</h3><p>{settings?.contact || 'Contact your community staff through the service request form.'}</p>
             <div className={styles.inline}>{settings?.services.map(service => <span className={styles.tag} key={service}>{service}</span>)}</div></section>
         </>}
@@ -174,7 +186,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
           return <section><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>PUBLIC WORK IN PROGRESS</p><h2>Public request calendar</h2></div></div>
             <p className={styles.hint}>Only requests explicitly approved for public display appear here.</p>
             <div className={styles.inline}><button className={styles.secondary} onClick={() => setCalendarMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>Previous month</button><strong>{new Intl.DateTimeFormat(portal.settings.language, { month: 'long', year: 'numeric' }).format(calendarMonth)}</strong><button className={styles.secondary} onClick={() => setCalendarMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>Next month</button></div>
-            <div className={styles.calendar} role="grid" aria-label="Public request calendar">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <strong key={day}>{day}</strong>)}{days.map(date => <section key={date.toISOString()} className={date.getMonth() === calendarMonth.getMonth() ? styles.calendarDay : `${styles.calendarDay} ${styles.calendarMuted}`}><time dateTime={date.toISOString().slice(0, 10)}>{date.getDate()}</time>{calendarRequests.filter(record => dateKey(new Date(record.created_at)) === dateKey(date)).map(record => <button key={record.id} onClick={() => void selectPublicRequest(record.id)}><strong>{record.title}</strong><small>{record.status}{record.category ? ` · ${record.category}` : ''}</small></button>)}</section>)}</div>
+            <div className={styles.calendar} role="grid" aria-label="Public request calendar">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <strong key={day}>{day}</strong>)}{days.map(date => <section key={date.toISOString()} className={date.getMonth() === calendarMonth.getMonth() ? styles.calendarDay : `${styles.calendarDay} ${styles.calendarMuted}`}><time dateTime={date.toISOString().slice(0, 10)}>{date.getDate()}</time>{calendarRequests.filter(record => dateKey(new Date(record.created_at)) === dateKey(date)).map(record => <button key={record.id} onClick={() => void selectPublicRequest(record.id)}><strong>{record.title}</strong><small>{record.status}{record.category ? ` · ${record.category}` : ''}{record.completed_at ? ` · Completed ${displayDate(record.completed_at, portal.settings)}` : ''}</small></button>)}</section>)}</div>
           </section>;
         })()}
         {view === 'report' && <div className={styles.twoColumns}><section><p className={styles.eyebrow}>LET'S MAKE IT BETTER</p><h2>Report a community problem</h2><p className={styles.hint}>For immediate danger, contact local emergency services. This form is not monitored as an emergency line.</p>
@@ -194,7 +206,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       {publicRequestDetail && <div className={styles.modalBackdrop} role="presentation">
         <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="public-ticket-title">
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{publicRequestDetail.status}</span><h2 id="public-ticket-title">{publicRequestDetail.title}</h2></div><button className={styles.secondary} onClick={() => setPublicRequestDetail(null)}>Close</button></div>
-          <div className={styles.ticketModalLayout}><div><p>{publicRequestDetail.category || 'Community request'}</p><p>{publicRequestDetail.description}</p><p>Reported {displayDate(publicRequestDetail.created_at, portal.settings)}</p><p>Updated {displayDate(publicRequestDetail.updated_at, portal.settings)}</p>
+          <div className={styles.ticketModalLayout}><div><p>{publicRequestDetail.category || 'Community request'}</p><p>{publicRequestDetail.description}</p><p>Reported {displayDate(publicRequestDetail.created_at, portal.settings)}</p>{publicRequestDetail.completed_at && <p>Completed {displayDate(publicRequestDetail.completed_at, portal.settings)}</p>}<p>Updated {displayDate(publicRequestDetail.updated_at, portal.settings)}</p>
             {publicRequestDetail.photo && <img className={styles.ticketPhoto} src={publicRequestDetail.photo} alt={`Original report for ${publicRequestDetail.title}`} />}
             {publicRequestDetail.field_photo && <img className={styles.ticketPhoto} src={publicRequestDetail.field_photo} alt={`Field work for ${publicRequestDetail.title}`} />}
             <h3>Public status updates</h3><ol className={styles.timeline}>{publicRequestDetail.history.map((event, index) => <li key={index}><strong>{event.status}</strong><small>{displayDate(event.timestamp, portal.settings)}</small></li>)}</ol></div>

@@ -200,15 +200,20 @@ civicRouter.get("/public/:slug/content", endpoint(async (req, res) => {
 civicRouter.get("/public/:slug/requests/calendar", endpoint(async (req, res) => {
 	const portal = await portalBySlug(req.params.slug);
 	const records = await tenantTransaction(portal.id, tx =>
-		rows<Pick<RecordRow, "id" | "title" | "category" | "status" | "created_at">>(
-			"SELECT id, title, category, status, created_at FROM civic.records WHERE kind = 'request' AND published AND archived_at IS NULL ORDER BY created_at DESC LIMIT 500",
+		rows<Pick<RecordRow, "id" | "title" | "category" | "status" | "created_at"> & { completed_at: string | null }>(
+			`SELECT record.id, record.title, record.category, record.status, record.created_at,
+				(SELECT history.created_at FROM civic.history history WHERE history.request_id = record.id
+					AND history.new_status = 'completed' ORDER BY history.created_at DESC, history.id DESC LIMIT 1) AS completed_at
+			 FROM civic.records record WHERE record.kind = 'request' AND record.published AND record.archived_at IS NULL
+			 ORDER BY record.created_at DESC LIMIT 500`,
 			{}, tx));
 	res.json(records.map(record => ({
 		id: record.id,
 		title: record.title,
 		category: record.category,
 		status: publicStatus(record.status, portal.settings.states),
-		created_at: record.created_at
+		created_at: record.created_at,
+		completed_at: record.completed_at
 	})));
 }));
 civicRouter.get("/public/:slug/requests/:id", endpoint(async (req, res) => {
@@ -220,9 +225,11 @@ civicRouter.get("/public/:slug/requests/:id", endpoint(async (req, res) => {
 		if (!record) throw new CivicError(404, "Public request not found");
 		const history = await rows<{ new_status: string; created_at: string }>(
 			"SELECT new_status, created_at FROM civic.history WHERE request_id = :id ORDER BY created_at, id", { id: record.id }, tx);
+		const completedAt = [...history].reverse().find(event => event.new_status === "completed")?.created_at || null;
 		return {
 			...record,
 			status: publicStatus(record.status, portal.settings.states),
+			completed_at: completedAt,
 			history: history.map(event => ({ status: publicStatus(event.new_status, portal.settings.states), timestamp: event.created_at }))
 		};
 	});

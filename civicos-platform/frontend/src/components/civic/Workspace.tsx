@@ -242,7 +242,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
             {session.portal.settings.states.map(state => {
               const recordsForState = visible.filter(record => record.status === state.key);
               return <section className={styles.requestColumn} key={state.key}><h3>{state.label}<small>{recordsForState.length}</small></h3>
-                {recordsForState.map(record => <button key={record.id} className={styles.card} onClick={() => void selectRequest(record.id)}><span className={styles.tag}>{record.archived_at ? 'Archived' : record.category}</span><strong>{record.title}</strong><p>{record.location}</p><small>{record.assigned_to ? `Assigned: ${memberLabel(record.assigned_to)}` : 'Unassigned'} · {displayDate(record.updated_at, session.portal.settings)}</small></button>)}
+                {recordsForState.map(record => <button key={record.id} className={styles.card} onClick={() => void selectRequest(record.id)}><span className={styles.tag}>{record.archived_at ? 'Archived' : record.category}</span><strong>{record.title}</strong><p>{record.location}</p><small>{record.assigned_to ? `Assigned: ${memberLabel(record.assigned_to)}` : 'Unassigned'} · {displayDate(record.updated_at, session.portal.settings)}</small>{field && <span className={styles.evidencePrompt}>Open to add completion photo and map pin</span>}</button>)}
               </section>;
             })}
           </div>
@@ -268,18 +268,18 @@ export default function Workspace({ field = false }: { field?: boolean }) {
         {view === 'map' && <><p className={styles.hint}>Your permissions determine which requests and locations appear. Select a request marker to open its work record.</p><MapEmbed portal={session.portal} token={token} revision={revision} onSelect={id => void selectRequest(id)} /></>}
         {detail && ['requests', 'calendar', 'map'].includes(view) && <article className={`${styles.card} ${styles.detail}`}>
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{stateLabel(detail.status)}</span><h3>{detail.title}</h3></div><button onClick={() => setDetail(null)} className={styles.secondary}>Close</button></div>
-          <p>{detail.description}</p><p>{detail.location}</p><code>{detail.reference}</code>
-          {detail.contact && <p>Private contact: {detail.contact.name} · {detail.contact.email} {detail.contact.phone}</p>}
-          {detail.photo && <img src={detail.photo} alt="Resident-submitted issue photo" />}
-          {detail.field_photo && <img src={detail.field_photo} alt="Field work photo" />}
-          {field && <section className={styles.fieldEvidence}><h3>Fix evidence and map location</h3><p className={styles.hint}>Click the map to pin where the work was completed, then upload the fix photo. Both are saved to this ticket.</p>
+          {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload a photo to document the fix.</p>
             <MapEmbed portal={session.portal} token={token} revision={revision} onPoint={setFieldPoint} />
             <div className={styles.inline}><label>Longitude<input readOnly value={fieldPoint?.[0] ?? ''} placeholder="Click the map" /></label><label>Latitude<input readOnly value={fieldPoint?.[1] ?? ''} placeholder="Click the map" /></label></div>
-            <label>Field work photo<input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={event => {
+            <label>Completion photo<input type="file" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy} onChange={event => {
               const file = event.currentTarget.files?.[0] || null;
               event.currentTarget.value = '';
               void uploadFieldPhoto(file);
             }} /></label></section>}
+          <p>{detail.description}</p><p>{detail.location}</p><code>{detail.reference}</code>
+          {detail.contact && <p>Private contact: {detail.contact.name} · {detail.contact.email} {detail.contact.phone}</p>}
+          {detail.photo && <img src={detail.photo} alt="Resident-submitted issue photo" />}
+          {detail.field_photo && <img src={detail.field_photo} alt="Field work photo" />}
           <h3>Work updates</h3><p className={styles.hint}>Notes and staff identities remain private. Residents see only the public status and update times.</p>
           <label>Private note<textarea rows={3} maxLength={5000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <label>Note visibility<select value={field ? 'down_chain' : noteVisibility} disabled={field} onChange={event => setNoteVisibility(event.target.value as 'role_only' | 'down_chain')}><option value="role_only">Only my role level</option><option value="down_chain">Share down the operational chain</option></select></label>
