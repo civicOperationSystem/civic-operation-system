@@ -24,6 +24,11 @@ test('main portal offers public organizations and opens the selected workspace',
   });
   await page.goto('/portal');
   await expect(page.getByRole('heading', { name: organization.name, exact: true })).toBeVisible();
+  await expect(page.locator('#organization-suggestions option')).toHaveAttribute('value', organization.name);
+  await page.getByRole('searchbox').fill('no-matching-organization');
+  await expect(page.getByText('No organizations match your search.')).toBeVisible();
+  await page.getByRole('searchbox').fill(organization.name);
+  await expect(page.getByRole('heading', { name: organization.name, exact: true })).toBeVisible();
   await page.getByRole('searchbox').fill('/portal/directory-test');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByRole('link', { name: `Open ${organization.name} portal` }).click();

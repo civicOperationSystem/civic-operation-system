@@ -94,7 +94,10 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       <h1>Everyday services.<br />A stronger community.</h1>
       <p>Find local information, report a problem, and follow the work that matters to your community.</p>
       <form onSubmit={event => { event.preventDefault(); setOrganizationQuery(organizationSearch); }} className={styles.inline} role="search" aria-label="Find an organization">
-        <label>Organization name or workspace address<input type="search" value={organizationSearch} onChange={event => { setOrganizationSearch(event.target.value); if (!event.target.value) setOrganizationQuery(''); }} placeholder="Organization name or /portal/village-b" /></label>
+        <label>Organization name or workspace address<input type="search" list="organization-suggestions" autoComplete="off" value={organizationSearch} onChange={event => { setOrganizationSearch(event.target.value); setOrganizationQuery(event.target.value); }} placeholder="Organization name or /portal/village-b" /></label>
+        <datalist id="organization-suggestions">
+          {organizations.map(organization => <option key={organization.slug} value={organization.name} label={`/portal/${organization.slug}`} />)}
+        </datalist>
         <button disabled={organizationsLoading || !!organizationsError} className={styles.primary}>Search</button>
       </form>
       {organizationsError && <p role="alert" className={styles.error}>{organizationsError}</p>}
