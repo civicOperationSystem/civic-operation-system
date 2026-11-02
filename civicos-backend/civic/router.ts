@@ -205,6 +205,24 @@ civicRouter.get("/public/:slug/requests/calendar", endpoint(async (req, res) => 
 		created_at: record.created_at
 	})));
 }));
+civicRouter.get("/public/:slug/requests/:id", endpoint(async (req, res) => {
+	const portal = await portalBySlug(req.params.slug);
+	const result = await tenantTransaction(portal.id, async tx => {
+		const [record] = await rows<Pick<RecordRow, "id" | "title" | "category" | "status" | "created_at" | "updated_at">>(
+			"SELECT id, title, category, status, created_at, updated_at FROM civic.records WHERE id = :id AND kind = 'request' AND published AND archived_at IS NULL",
+			{ id: identifier(req.params.id) }, tx);
+		if (!record) throw new CivicError(404, "Public request not found");
+		const history = await rows<{ new_status: string; created_at: string }>(
+			"SELECT new_status, created_at FROM civic.history WHERE request_id = :id ORDER BY created_at, id", { id: record.id }, tx);
+		return {
+			...record,
+			status: publicStatus(record.status, portal.settings.states),
+			history: history.map(event => ({ status: publicStatus(event.new_status, portal.settings.states), timestamp: event.created_at }))
+		};
+	});
+	res.setHeader("Cache-Control", "no-store");
+	res.json(result);
+}));
 civicRouter.post("/public/:slug/requests", rateLimit, endpoint(async (req, res) => {
 	const portal = await portalBySlug(req.params.slug);
 	const category = text(req.body.category, "category", 100);
@@ -358,6 +376,37 @@ civicRouter.put("/platform/organizations/:organizationId/admins/:memberId/access
 	if (!member) throw new CivicError(404, "Organization administrator not found");
 	res.json(member);
 }));
+civicRouter.post("/platform/organizations/:organizationId/admins/:memberId/reassign", endpoint(async (req, res) => {
+	platformAccessToken(req);
+	const organizationId = identifier(req.params.organizationId);
+	const memberId = identifier(req.params.memberId);
+	const displayName = text(req.body.display_name, "new administrator name", 100);
+	const email = text(req.body.email, "new administrator email", 254).toLowerCase();
+	if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new CivicError(400, "Invalid new administrator email");
+	const result = await tenantTransaction(organizationId, async tx => {
+		const [previous] = await rows<Member>("SELECT * FROM civic.members WHERE id = :memberId AND role = 'admin' FOR UPDATE",
+			{ memberId }, tx);
+		if (!previous) throw new CivicError(404, "Organization administrator not found");
+		if (previous.email === email) throw new CivicError(400, "Choose a different administrator email");
+		const [existing] = await rows<Member>("SELECT * FROM civic.members WHERE email = :email FOR UPDATE", { email }, tx);
+		let administrator: { id: string; email: string; display_name: string; active: boolean } | undefined;
+		if (existing) {
+			const [updated] = await rows<{ id: string; email: string; display_name: string; active: boolean }>("UPDATE civic.members SET display_name = :displayName, role = 'admin', active = true WHERE id = :id RETURNING id, email, display_name, active",
+				{ id: existing.id, displayName }, tx);
+			administrator = updated;
+		} else {
+			const [created] = await rows<{ id: string; email: string; display_name: string; active: boolean }>(`INSERT INTO civic.members(id, tenant_id, email, display_name, role)
+				VALUES (:id, :tenant, :email, :displayName, 'admin') RETURNING id, email, display_name, active`,
+				{ id: randomUUID(), tenant: organizationId, email, displayName }, tx);
+			administrator = created;
+		}
+		const [deactivated] = await rows<{ id: string; email: string; display_name: string; active: boolean }>("UPDATE civic.members SET active = false WHERE id = :id RETURNING id, email, display_name, active",
+			{ id: previous.id }, tx);
+		if (!administrator || !deactivated) throw new CivicError(500, "Could not reassign organization administrator");
+		return { administrator, previous: deactivated };
+	}, undefined, true);
+	res.status(201).json(result);
+}));
 civicRouter.put("/platform/organizations/:id/archive", endpoint(async (req, res) => {
 	platformAccessToken(req);
 	const id = identifier(req.params.id);
@@ -453,6 +502,17 @@ secured("post", "/staff/requests/:id/assign", "assign", async (req, res, context
 	}, context.tx);
 	res.json({ assigned_to: assigned });
 });
+secured("post", "/staff/requests/:id/notes", null, async (req, res, context) => {
+	const record = await requestFor(context, req.params.id, true);
+	const notes = text(req.body.notes, "notes", 5000);
+	await rows(`INSERT INTO civic.history(id, tenant_id, request_id, actor, actor_role, previous_status, new_status, notes, note_visibility, assigned_to)
+		VALUES (:history, :tenant, :id, :actor, :role, :status, :status, :notes, :visibility, :assigned) RETURNING id`, {
+		history: randomUUID(), tenant: context.portal.id, id: record.id, actor: context.member.id,
+		role: roleLevel(context), status: record.status, notes,
+		visibility: noteVisibility(req.body.note_visibility, context), assigned: record.assigned_to
+	}, context.tx);
+	res.status(201).json({ recorded: true });
+}, rateLimit);
 secured("post", "/staff/requests/:id/archive", "read", async (req, res, context) => {
 	const record = await requestFor(context, req.params.id, true);
 	if (record.assigned_to && !context.permissions.includes("read")) throw new CivicError(403, "Permission denied");

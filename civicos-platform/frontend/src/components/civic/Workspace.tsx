@@ -156,6 +156,14 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       setDetail(null); await load(token, page);
     }, restore ? 'Request restored to the active board' : 'Request archived');
   }
+  async function addNote() {
+    if (!detail || !notes.trim()) return;
+    await action(async () => {
+      await civicApi(`/staff/requests/${detail.id}/notes`, { token, method: 'POST', body: { notes, note_visibility: noteVisibility } });
+      setDetail(await civicApi<RequestDetail>(`/staff/requests/${detail.id}`, { token }));
+      setNotes('');
+    }, 'Private note added to this ticket.');
+  }
   function stateLabel(key: string | null): string {
     return session?.portal.settings.states.find(state => state.key === key)?.label || key || 'Submitted';
   }
@@ -246,6 +254,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
           <label>Private note<textarea rows={3} maxLength={5000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <label>Note visibility<select value={field ? 'down_chain' : noteVisibility} disabled={field} onChange={event => setNoteVisibility(event.target.value as 'role_only' | 'down_chain')}><option value="role_only">Only my role level</option><option value="down_chain">Share down the operational chain</option></select></label>
           {field && <p className={styles.hint}>Field notes are shared with staff and administrators.</p>}
+          <button disabled={busy || !notes.trim()} className={styles.secondary} onClick={() => void addNote()}>Add private note</button>
           {has('transition') && <div className={styles.inline}>{[...new Set([...previousStates, ...nextStates])].filter(next => {
             const state = session.portal.settings.states.find(item => item.key === next);
             return (!field && has('read')) || (!!state && fieldCanEnter(state));
@@ -263,7 +272,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
               catch (failure) { setDetail(detail); throw failure; }
               setRevision(value => value + 1);
             }, 'Map visibility updated');
-          }} /> Publish this request's coordinates and category on the public map</label>}
+          }} /> Publish this request on the public map and calendar</label>}
           {!showArchived && has('read') && <button disabled={busy} className={styles.secondary} onClick={() => void archive()}>Archive request</button>}
           {showArchived && has('manage') && <button disabled={busy} className={styles.secondary} onClick={() => void archive(true)}>Restore request</button>}
           <h3>Audit trail</h3><ol className={styles.timeline}>{detail.history.map(event => <li key={event.id}><strong>{stateLabel(event.previous_status)} → {stateLabel(event.new_status)}</strong><small>{memberLabel(event.actor)} · {displayDate(event.created_at, session.portal.settings)}</small>{event.assigned_to && <small>Assigned: {memberLabel(event.assigned_to)}</small>}{event.notes && <p>{event.notes}</p>}</li>)}</ol>

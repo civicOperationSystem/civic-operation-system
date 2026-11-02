@@ -16,6 +16,7 @@ export default function PlatformAdmin() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [reassignment, setReassignment] = useState<{ organization: Organization; administrator: Administrator } | null>(null);
   const exchangedToken = useRef('');
 
   useEffect(() => {
@@ -185,6 +186,33 @@ export default function PlatformAdmin() {
     }
   }
 
+  async function reassignAdministrator(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!reassignment) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await civicApi<{ administrator: Administrator; previous: Administrator }>(
+        `/platform/organizations/${reassignment.organization.id}/admins/${reassignment.administrator.id}/reassign`, {
+          token, method: 'POST', body: { display_name: data.get('display_name'), email: data.get('email') },
+        });
+      setOrganizations(current => current.map(item => item.id === reassignment.organization.id ? {
+        ...item,
+        admins: [...item.admins.filter(member => member.id !== result.administrator.id && member.id !== result.previous.id), result.previous, result.administrator]
+          .sort((left, right) => left.display_name.localeCompare(right.display_name)),
+      } : item));
+      setReassignment(null);
+      setNotice(`${result.administrator.display_name} is now the bottom administrator. ${result.previous.display_name} was deactivated.`);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not reassign administrator');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <main className={styles.shell}>
     <header className={styles.header}>
       <Link className={styles.brand} href="/">C<span>O</span> <strong>CivicOS</strong></Link>
@@ -230,6 +258,7 @@ export default function PlatformAdmin() {
                 <button className={styles.secondary} disabled={busy} onClick={() => void setAdministratorAccess(organization, administrator, !administrator.active)}>
                   {administrator.active ? 'Deactivate' : 'Reactivate'}
                 </button>
+                <button className={styles.secondary} disabled={busy} onClick={() => setReassignment({ organization, administrator })}>Reassign</button>
               </li>)}</ul>
               {!organization.archived_at && <><Link href={`/staff?org=${encodeURIComponent(organization.slug)}`}>Open staff sign-in</Link>
               <Link href={`/portal/${encodeURIComponent(organization.slug)}`}>Open public portal</Link></>}
@@ -243,5 +272,16 @@ export default function PlatformAdmin() {
         </section>
       </div>
     </section>}
+    {reassignment && <div className={styles.modalBackdrop} role="presentation">
+      <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="reassign-administrator-title">
+        <div className={styles.sectionTitle}><div><p className={styles.eyebrow}>BOTTOM ADMINISTRATOR</p><h2 id="reassign-administrator-title">Reassign administrator</h2></div><button className={styles.secondary} disabled={busy} onClick={() => setReassignment(null)}>Close</button></div>
+        <p>Replace {reassignment.administrator.display_name} for {reassignment.organization.name}. The current administrator will be deactivated; their ticket history remains intact.</p>
+        <form className={styles.form} onSubmit={reassignAdministrator}>
+          <label>New administrator name<input name="display_name" required maxLength={100} autoComplete="name" /></label>
+          <label>New administrator email<input name="email" required type="email" maxLength={254} autoComplete="email" /></label>
+          <button className={styles.primary} disabled={busy}>Confirm reassignment</button>
+        </form>
+      </section>
+    </div>}
   </main>;
 }

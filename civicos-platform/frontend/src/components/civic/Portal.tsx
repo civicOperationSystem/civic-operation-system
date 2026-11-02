@@ -7,6 +7,7 @@ import styles from './civic.module.css';
 
 const kinds = ['all', 'service', 'announcement', 'event', 'project', 'facility', 'document', 'emergency', 'infrastructure'];
 type PublicCalendarRequest = { id: string; title: string; category: string | null; status: string; created_at: string };
+type PublicRequestDetail = PublicCalendarRequest & { updated_at: string; history: { status: string; timestamp: string }[] };
 export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [slug, setSlug] = useState(initialSlug);
   const [organizations, setOrganizations] = useState<{ name: string; slug: string }[]>([]);
@@ -17,6 +18,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [portal, setPortal] = useState<PortalData | null>(null);
   const [content, setContent] = useState<CivicRecord[]>([]);
   const [calendarRequests, setCalendarRequests] = useState<PublicCalendarRequest[]>([]);
+  const [publicRequestDetail, setPublicRequestDetail] = useState<PublicRequestDetail | null>(null);
   const [view, setView] = useState('overview');
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [kind, setKind] = useState('all');
@@ -37,7 +39,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         civicApi<PublicCalendarRequest[]>(`/public/${org.slug}/requests/calendar`),
       ]);
       setPortal(org); setSlug(org.slug); setContent(records); setCalendarRequests(requests); setAnonymous(org.settings.anonymous);
-      setSubmitted(''); setTracked(null); setPoint(null);
+      setSubmitted(''); setTracked(null); setPublicRequestDetail(null); setPoint(null);
       document.documentElement.lang = org.settings.language;
       document.title = `${org.name} | CivicOS`;
     } catch (failure) { setPortal(null); setError(failure instanceof Error ? failure.message : 'Could not load portal'); }
@@ -86,6 +88,15 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
     try { setTracked(await civicApi<Tracking>(`/public/${portal!.slug}/track`, { method: 'POST', body: { reference: reference.trim() } })); }
     catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not track request'); }
     finally { setBusy(false); }
+  }
+  async function selectPublicRequest(id: string) {
+    setError('');
+    setBusy(true);
+    try {
+      setPublicRequestDetail(await civicApi<PublicRequestDetail>(`/public/${portal!.slug}/requests/${id}`));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not load public request');
+    } finally { setBusy(false); }
   }
   const settings = portal?.settings;
   const visibleOrganizations = organizations.filter(organization =>
@@ -164,7 +175,8 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
           return <section><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>PUBLIC WORK IN PROGRESS</p><h2>Public request calendar</h2></div></div>
             <p className={styles.hint}>Only requests explicitly approved for public display appear here.</p>
             <div className={styles.inline}><button className={styles.secondary} onClick={() => setCalendarMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>Previous month</button><strong>{new Intl.DateTimeFormat(portal.settings.language, { month: 'long', year: 'numeric' }).format(calendarMonth)}</strong><button className={styles.secondary} onClick={() => setCalendarMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>Next month</button></div>
-            <div className={styles.calendar} role="grid" aria-label="Public request calendar">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <strong key={day}>{day}</strong>)}{days.map(date => <section key={date.toISOString()} className={date.getMonth() === calendarMonth.getMonth() ? styles.calendarDay : `${styles.calendarDay} ${styles.calendarMuted}`}><time dateTime={date.toISOString().slice(0, 10)}>{date.getDate()}</time>{calendarRequests.filter(record => dateKey(new Date(record.created_at)) === dateKey(date)).map(record => <article key={record.id}><strong>{record.title}</strong><small>{record.status}{record.category ? ` · ${record.category}` : ''}</small></article>)}</section>)}</div>
+            <div className={styles.calendar} role="grid" aria-label="Public request calendar">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <strong key={day}>{day}</strong>)}{days.map(date => <section key={date.toISOString()} className={date.getMonth() === calendarMonth.getMonth() ? styles.calendarDay : `${styles.calendarDay} ${styles.calendarMuted}`}><time dateTime={date.toISOString().slice(0, 10)}>{date.getDate()}</time>{calendarRequests.filter(record => dateKey(new Date(record.created_at)) === dateKey(date)).map(record => <button key={record.id} onClick={() => void selectPublicRequest(record.id)}><strong>{record.title}</strong><small>{record.status}{record.category ? ` · ${record.category}` : ''}</small></button>)}</section>)}</div>
+            {publicRequestDetail && <article className={styles.card}><div className={styles.sectionTitle}><div><span className={styles.tag}>{publicRequestDetail.status}</span><h3>{publicRequestDetail.title}</h3></div><button className={styles.secondary} onClick={() => setPublicRequestDetail(null)}>Close</button></div><p>{publicRequestDetail.category}</p><p>Reported {displayDate(publicRequestDetail.created_at, portal.settings)}</p><p>Updated {displayDate(publicRequestDetail.updated_at, portal.settings)}</p><ol className={styles.timeline}>{publicRequestDetail.history.map((event, index) => <li key={index}><strong>{event.status}</strong><small>{displayDate(event.timestamp, portal.settings)}</small></li>)}</ol></article>}
           </section>;
         })()}
         {view === 'report' && <div className={styles.twoColumns}><section><p className={styles.eyebrow}>LET'S MAKE IT BETTER</p><h2>Report a community problem</h2><p className={styles.hint}>For immediate danger, contact local emergency services. This form is not monitored as an emergency line.</p>
