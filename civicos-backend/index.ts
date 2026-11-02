@@ -48,6 +48,16 @@ function verifyDatabaseOnce(): Promise<void> {
 
 app.use(helmet());
 app.use(requestLogger);
+app.get("/readyz", async (_req, res) => {
+	res.setHeader("Cache-Control", "no-store");
+	try {
+		await verifyCivicDatabase();
+		res.json({ service: "CivicOS", status: "ready" });
+	} catch (error) {
+		console.error("CivicOS readiness check failed", error);
+		res.status(503).json({ service: "CivicOS", status: "not_ready" });
+	}
+});
 app.use(express.json({ limit: "3mb" }));
 app.use((_req, res, next) => {
 	void verifyDatabaseOnce().then(() => next()).catch(error => {
