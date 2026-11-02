@@ -160,7 +160,7 @@ export default function CivicMap() {
     if (!map) return;
     (map.getSource('civic') as GeoJSONSource).setData(filtered);
   }, [map, filtered]);
-  useEffect(() => { if (map && context) map.flyTo({ center: context.center, zoom: 12 }); }, [map, context?.slug, context?.center[0], context?.center[1]]);
+  useEffect(() => { if (map && context) map.flyTo({ center: context.center, zoom: context.zoom || 12 }); }, [map, context?.slug, context?.center[0], context?.center[1], context?.zoom]);
   const statuses = [...new Set(data.features.map(feature => feature.properties.status).filter((item): item is string => !!item))];
   function fitLocations() {
     if (!map || !filtered.features.length) return;

@@ -1,13 +1,16 @@
 'use client';
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { civicApi, CivicRecord, Portal as PortalData, Tracking, displayDate, readPhoto } from '@/lib/civic';
+import { civicApi, CivicRecord, Portal as PortalData, displayDate, readPhoto } from '@/lib/civic';
 import MapEmbed from './MapEmbed';
 import styles from './civic.module.css';
 
 const kinds = ['all', 'service', 'announcement', 'event', 'project', 'facility', 'document', 'emergency', 'infrastructure'];
 type PublicCalendarRequest = { id: string; title: string; category: string | null; status: string; created_at: string };
-type PublicRequestDetail = PublicCalendarRequest & { updated_at: string; history: { status: string; timestamp: string }[] };
+type PublicRequestDetail = PublicCalendarRequest & {
+  location: string; longitude: number | null; latitude: number | null; updated_at: string;
+  history: { status: string; timestamp: string }[];
+};
 export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [slug, setSlug] = useState(initialSlug);
   const [organizations, setOrganizations] = useState<{ name: string; slug: string }[]>([]);
@@ -25,9 +28,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [point, setPoint] = useState<[number, number] | null>(null);
-  const [reference, setReference] = useState('');
   const [submitted, setSubmitted] = useState('');
-  const [tracked, setTracked] = useState<Tracking | null>(null);
   const [anonymous, setAnonymous] = useState(true);
   async function load(nextSlug?: string) {
     setError(''); setBusy(true);
@@ -39,7 +40,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         civicApi<PublicCalendarRequest[]>(`/public/${org.slug}/requests/calendar`),
       ]);
       setPortal(org); setSlug(org.slug); setContent(records); setCalendarRequests(requests); setAnonymous(org.settings.anonymous);
-      setSubmitted(''); setTracked(null); setPublicRequestDetail(null); setPoint(null);
+      setSubmitted(''); setPublicRequestDetail(null); setPoint(null);
       document.documentElement.lang = org.settings.language;
       document.title = `${org.name} | CivicOS`;
     } catch (failure) { setPortal(null); setError(failure instanceof Error ? failure.message : 'Could not load portal'); }
@@ -79,14 +80,8 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
           },
         },
       });
-      setSubmitted(response.reference); setReference(response.reference); setPoint(null); form.reset();
+      setSubmitted(response.reference); setPoint(null); form.reset();
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not submit request'); }
-    finally { setBusy(false); }
-  }
-  async function track(event: FormEvent) {
-    event.preventDefault(); setError(''); setTracked(null); setBusy(true);
-    try { setTracked(await civicApi<Tracking>(`/public/${portal!.slug}/track`, { method: 'POST', body: { reference: reference.trim() } })); }
-    catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not track request'); }
     finally { setBusy(false); }
   }
   async function selectPublicRequest(id: string) {
@@ -138,12 +133,12 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
           <div className={styles.organization}>{settings?.logo && <img src={settings.logo} alt="" width={48} height={48} />}<h1>{portal.name}</h1></div>
           <p>Local information and everyday services, all in one place.<br />No account needed. Everyone welcome.</p>
           <div className={styles.inline}><button className={styles.primary} onClick={() => setView('report')}>Report a problem <span aria-hidden>↗</span></button>
-            <button className={styles.secondary} onClick={() => setView('track')}>Track a request</button></div>
+            </div>
         </div>
         <aside className={styles.heroAside}><span className={styles.pulse} /> Open, local, accountable<p>One platform for residents,<br />staff, and field teams.</p><strong>{settings?.departments.length} departments · {settings?.services.length} services</strong></aside>
       </section>
       <nav className={styles.tabs} aria-label="Portal sections">
-        {['overview', 'map', 'calendar', 'report', 'track'].map(tab => <button key={tab} aria-current={view === tab ? 'page' : undefined} onClick={() => { setView(tab); setError(''); }}>{({ overview: 'Community hub', map: 'Explore the map', calendar: 'Public requests', report: 'Report a problem', track: 'Track a request' })[tab]}</button>)}
+        {['overview', 'map', 'calendar', 'report'].map(tab => <button key={tab} aria-current={view === tab ? 'page' : undefined} onClick={() => { setView(tab); setError(''); }}>{({ overview: 'Community hub', map: 'Explore the map', calendar: 'Public requests', report: 'Report a problem' })[tab]}</button>)}
       </nav>
       <div className={styles.body}>
         {error && <p role="alert" className={styles.error}>{error}</p>}
@@ -182,7 +177,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
           </section>;
         })()}
         {view === 'report' && <div className={styles.twoColumns}><section><p className={styles.eyebrow}>LET'S MAKE IT BETTER</p><h2>Report a community problem</h2><p className={styles.hint}>For immediate danger, contact local emergency services. This form is not monitored as an emergency line.</p>
-          {submitted && <div role="status" className={styles.success}><strong>Request received.</strong><p>Save this private tracking reference. Anyone with it can check the public status.</p><code>{submitted}</code><button className={styles.secondary} onClick={() => setView('track')}>Track this request</button></div>}
+          {submitted && <div role="status" className={styles.success}><strong>Request received.</strong><p>Save this private tracking reference for your records.</p><code>{submitted}</code></div>}
           <form onSubmit={report} className={styles.form}>
             <label>Category<select name="category" required>{settings?.categories.map(category => <option key={category}>{category}</option>)}</select></label>
             <label>What happened?<textarea name="description" rows={4} required maxLength={5000} placeholder="Describe the issue and anything our team should know." /></label>
@@ -194,17 +189,15 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             {!anonymous && <><label>Your name<input name="name" required maxLength={100} autoComplete="name" /></label><label>Email<input name="email" type="email" required maxLength={254} autoComplete="email" /></label><label>Phone (optional)<input name="phone" maxLength={50} type="tel" autoComplete="tel" /></label></>}
             <button disabled={busy} className={styles.primary}>{busy ? 'Submitting…' : 'Submit request'}</button>
           </form></section><aside><h3>Pin the location</h3><p className={styles.hint}>Click on the map to add coordinates. Contact details and photos are never published.</p><MapEmbed portal={portal} onPoint={setPoint} /></aside></div>}
-        {view === 'track' && <section className={styles.narrow}><p className={styles.eyebrow}>FOLLOW THE PROGRESS</p><h2>Track your request</h2><p className={styles.hint}>Use the private reference you received when submitting your report.</p>
-          <form onSubmit={track} className={styles.form}><label>Tracking reference<input value={reference} onChange={event => setReference(event.target.value)} placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" required maxLength={39} autoComplete="off" /></label><button disabled={busy} className={styles.primary}>Check status</button></form>
-          {tracked && <article className={styles.card}><span className={styles.tag}>{tracked.status}</span><h3>{tracked.title}</h3><p>{tracked.category}</p><p>Reported {displayDate(tracked.reported, portal.settings)}</p><p>Updated {displayDate(tracked.updated, portal.settings)}</p>
-            <ol className={styles.timeline}>{tracked.history.map((event, index) => <li key={index}><strong>{event.status}</strong><small>{displayDate(event.timestamp, portal.settings)}</small></li>)}</ol></article>}
-        </section>}
       </div>
       {publicRequestDetail && <div className={styles.modalBackdrop} role="presentation">
         <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="public-ticket-title">
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{publicRequestDetail.status}</span><h2 id="public-ticket-title">{publicRequestDetail.title}</h2></div><button className={styles.secondary} onClick={() => setPublicRequestDetail(null)}>Close</button></div>
-          <p>{publicRequestDetail.category || 'Community request'}</p><p>Reported {displayDate(publicRequestDetail.created_at, portal.settings)}</p><p>Updated {displayDate(publicRequestDetail.updated_at, portal.settings)}</p>
-          <h3>Public status updates</h3><ol className={styles.timeline}>{publicRequestDetail.history.map((event, index) => <li key={index}><strong>{event.status}</strong><small>{displayDate(event.timestamp, portal.settings)}</small></li>)}</ol>
+          <div className={styles.ticketModalLayout}><div><p>{publicRequestDetail.category || 'Community request'}</p><p>Reported {displayDate(publicRequestDetail.created_at, portal.settings)}</p><p>Updated {displayDate(publicRequestDetail.updated_at, portal.settings)}</p>
+            <h3>Public status updates</h3><ol className={styles.timeline}>{publicRequestDetail.history.map((event, index) => <li key={index}><strong>{event.status}</strong><small>{displayDate(event.timestamp, portal.settings)}</small></li>)}</ol></div>
+            <aside><h3>Public location</h3><p>{publicRequestDetail.location || 'Location details are not available.'}</p>{publicRequestDetail.longitude !== null && publicRequestDetail.latitude !== null ?
+              <MapEmbed portal={portal} center={[publicRequestDetail.longitude, publicRequestDetail.latitude]} zoom={16} onSelect={id => void selectPublicRequest(id)} /> :
+              <p className={styles.hint}>A map location was not provided for this ticket.</p>}</aside></div>
         </section>
       </div>}
     </>}

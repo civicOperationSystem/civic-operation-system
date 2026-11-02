@@ -114,8 +114,9 @@ export default function ChatPanel({ token, session }: { token: string; session: 
   }
   const activeChannel = conversation?.type === 'channel' ? channels.find(item => item.id === conversation.id) : null;
   const activeDirect = conversation?.type === 'direct' ? directs.find(item => item.id === conversation.id) : null;
-  const matchingContacts = contacts.filter(member =>
-    `${member.display_name} ${member.email} ${member.role}`.toLowerCase().includes(contactSearch.trim().toLowerCase()));
+  const contactQuery = contactSearch.trim().toLowerCase();
+  const matchingContacts = contactQuery ? contacts.filter(member =>
+    `${member.display_name} ${member.email} ${member.role}`.toLowerCase().includes(contactQuery)).slice(0, 8) : [];
   return <section className={styles.chatLayout} aria-label="Organization chat">
     <aside className={styles.chatSidebar}>
       <h3>Organization channels</h3>
@@ -134,12 +135,14 @@ export default function ChatPanel({ token, session }: { token: string; session: 
       <div className={styles.chatNavigation}>{directs.map(direct =>
         <button key={direct.id} aria-current={conversation?.type === 'direct' && conversation.id === direct.id ? 'page' : undefined}
           onClick={() => setConversation({ type: 'direct', id: direct.id })}>↗ {direct.member_name}<small>{direct.last_message || 'Start a private conversation'}</small></button>)}</div>
-      <label className={styles.chatContact}>Find a teammate by name<input value={contactSearch} onChange={event => setContactSearch(event.target.value)} placeholder="Search a name" />
-      <select value="" disabled={busy} onChange={event => {
-        const member = contacts.find(item => item.id === event.target.value);
-        if (member) void openDirect(member);
-      }}><option value="">Choose a teammate…</option>{matchingContacts.map(member =>
-        <option key={member.id} value={member.id}>{member.display_name} · {member.role}</option>)}</select></label>
+      <label className={styles.chatContact}>Find a teammate by name<input value={contactSearch} onChange={event => setContactSearch(event.target.value)} placeholder="Type a name" autoComplete="off" />
+      {contactQuery && <div className={styles.chatSuggestions} role="listbox" aria-label="Matching teammates">
+        {matchingContacts.length ? matchingContacts.map(member => <button key={member.id} type="button" role="option" disabled={busy} onClick={() => {
+          setContactSearch('');
+          void openDirect(member);
+        }}><strong>{member.display_name}</strong><small>{member.role}</small></button>) :
+          <p role="status">No teammate matches &ldquo;{contactSearch}&rdquo;.</p>}
+      </div>}</label>
     </aside>
     <div className={styles.chatConversation}>
       <header className={styles.chatHeader}>
