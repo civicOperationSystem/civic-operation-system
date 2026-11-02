@@ -194,7 +194,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     const state = session?.portal.settings.states.find(item => item.key === detail.status);
     return !!state && (state.key === 'completed' || state.next.length === 0);
   })();
-  const ticketPhotoCount = detail ? detail.photos.length + detail.field_photos.length : 0;
+  const fieldPhotoCount = detail?.field_photos.length || 0;
   async function logout() {
     try {
       if (isCivicSupabaseConfigured()) {
@@ -269,10 +269,10 @@ export default function Workspace({ field = false }: { field?: boolean }) {
         {view === 'map' && <><p className={styles.hint}>Your permissions determine which requests and locations appear. Select a request marker or a request in the location list to open its work record.</p><MapEmbed portal={session.portal} token={token} revision={revision} onSelect={id => void selectRequest(id)} /></>}
         {detail && ['requests', 'calendar', 'map'].includes(view) && <article className={`${styles.card} ${styles.detail}`}>
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{stateLabel(detail.status)}</span><h3>{detail.title}</h3></div><button onClick={() => setDetail(null)} className={styles.secondary}>Close</button></div>
-          {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload PNG, JPEG or WebP photos up to 5 MB each. Photos over 512 KB are compressed to JPEG before upload. Tickets allow up to three photos total.</p>
+          {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload up to three field photos (PNG, JPEG or WebP, up to 5 MB each). Photos over 512 KB are compressed to JPEG before upload. Field photos are public when the request is verified.</p>
             <MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint || session.portal.settings.center} zoom={fieldPoint ? 16 : undefined} onPoint={setFieldPoint} />
             <div className={styles.inline}><label>Longitude<input readOnly value={fieldPoint?.[0] ?? ''} placeholder="Click the map" /></label><label>Latitude<input readOnly value={fieldPoint?.[1] ?? ''} placeholder="Click the map" /></label></div>
-            <label>Completion photo ({ticketPhotoCount}/3)<input type="file" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy || ticketPhotoCount >= 3} onChange={event => {
+            <label>Completion photo ({fieldPhotoCount}/3)<input type="file" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy || fieldPhotoCount >= 3} onChange={event => {
               const file = event.currentTarget.files?.[0] || null;
               event.currentTarget.value = '';
               void uploadFieldPhoto(file);
@@ -308,7 +308,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
               await civicApi(`/staff/requests/${detail.id}/assign`, { token, method: 'POST', body: { assigned_to: worker, notes, note_visibility: noteVisibility } });
               setDetail(await civicApi<RequestDetail>(`/staff/requests/${detail.id}`, { token })); await load(); setNotes('');
             }, 'Assignment recorded')}>Save assignment</button></div>}
-          {has('publish') && !field && !canPublishTicket && !detail.published && <p className={styles.hint}>Complete this ticket before it can be published to the public portal.</p>}
+          {has('publish') && !field && !canPublishTicket && !detail.published && <p className={styles.hint}>Complete this ticket before its description can be published. Resident photos are public after review; field photos appear when verified.</p>}
           {has('publish') && !field && (canPublishTicket || detail.published) && <label className={styles.checkbox}><input type="checkbox" checked={detail.published} disabled={busy} onChange={event => {
             const published = event.target.checked;
             setDetail({ ...detail, published });
@@ -317,7 +317,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
               catch (failure) { setDetail(detail); throw failure; }
               setRevision(value => value + 1);
             }, 'Map visibility updated');
-          }} /> Publish completed ticket details, location, and photos to the public portal</label>}
+          }} /> Publish completed ticket description to the public portal</label>}
           {!showArchived && has('read') && <button disabled={busy} className={styles.secondary} onClick={() => void archive()}>Archive request</button>}
           {showArchived && has('manage') && <button disabled={busy} className={styles.secondary} onClick={() => void archive(true)}>Restore request</button>}
           <h3>Audit trail</h3><ol className={styles.timeline}>{detail.history.map(event => <li key={event.id}><strong>{stateLabel(event.previous_status)} → {stateLabel(event.new_status)}</strong><small>{memberLabel(event.actor)} · {displayDate(event.created_at, session.portal.settings)}</small>{event.assigned_to && <small>Assigned: {memberLabel(event.assigned_to)}</small>}{event.notes && <p>{event.notes}</p>}</li>)}</ol>

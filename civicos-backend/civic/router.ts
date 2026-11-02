@@ -5,7 +5,7 @@ import { Transaction } from "sequelize";
 import { rows, tenantTransaction } from "./database";
 import {
 	CivicError, Settings, State, Permission, permissions, defaultRoles, defaultSettings, identifier, text,
-	coordinates, trackingReference, safeUrl, validateSettings, fieldCanEnter
+	coordinates, trackingReference, safeUrl, validateSettings, fieldCanEnter, publicRequestPhotos
 } from "./domain";
 import { getSupabaseUser } from "./supabase-auth";
 import { logger } from "../utils/logger";
@@ -244,7 +244,7 @@ civicRouter.get("/public/:slug/requests/:id", endpoint(async (req, res) => {
 			location: record.location,
 			longitude: record.longitude,
 			latitude: record.latitude,
-			photos: record.published ? [...record.photos, ...record.field_photos] : [],
+			photos: publicRequestPhotos(record.status, record.photos, record.field_photos),
 			created_at: record.created_at,
 			updated_at: record.updated_at,
 			completed_at: completedAt,
@@ -550,8 +550,8 @@ secured("post", "/staff/requests/:id/field-photo", null, async (req, res, contex
 	const record = await requestFor(context, req.params.id, true);
 	const fieldPhoto = photo(req.body.photo);
 	if (!fieldPhoto) throw new CivicError(400, "Choose a field photo to upload");
-	if (record.photos.length + record.field_photos.length >= 3) {
-		throw new CivicError(400, "A ticket can have no more than three photos");
+	if (record.field_photos.length >= 3) {
+		throw new CivicError(400, "A ticket can have no more than three field photos");
 	}
 	const coordinatesProvided = req.body.longitude !== undefined || req.body.latitude !== undefined;
 	const point = coordinatesProvided ? coordinates(req.body.longitude, req.body.latitude) : {

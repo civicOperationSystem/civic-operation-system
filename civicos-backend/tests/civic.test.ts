@@ -21,6 +21,9 @@ vi.hoisted(() => {
 	process.env.CIVIC_DATABASE = "civicos_test";
 	process.env.CIVIC_DB_USER = "civic_app";
 	process.env.CIVIC_DB_PASSWORD = process.env.CIVIC_TEST_APP_PASSWORD || `${crypto.randomUUID()}${crypto.randomUUID()}`;
+	process.env.CIVIC_DATABASE_URL = "";
+	process.env.DATABASE_URL = "";
+	process.env.CIVIC_ADMIN_DATABASE_URL = "";
 	process.env.JWT_SECRET = `${crypto.randomUUID()}${crypto.randomUUID()}`;
 	process.env.SUPABASE_URL = "https://auth.example.test";
 	process.env.SUPABASE_ANON_KEY = "test-anon-key";
@@ -47,6 +50,8 @@ let readOnlyToken: string;
 let reference: string;
 let requestId: string;
 let createdPlatformTenant: string | undefined;
+const residentPhoto = "data:image/png;base64,iVBORw0KGgo=";
+const fieldPhoto = "data:image/jpeg;base64,/9j/";
 
 async function login(slug: string, email: string): Promise<string> {
 	const accessToken = `verified-${randomUUID()}`;
@@ -207,7 +212,7 @@ describe("CivicOS end-to-end workflow and private-safe tracking", () => {
 	it("submits an anonymous report with a 128-bit tracking capability", async () => {
 		const response = await request(app).post(`/api/civic/public/${slugA}/requests`).send({
 			category: "Pothole", description: "Road damage outside the library", location: "Library entrance",
-			longitude: -73.98, latitude: 40.75, anonymous: true
+			longitude: -73.98, latitude: 40.75, anonymous: true, photos: [residentPhoto, residentPhoto, residentPhoto]
 		});
 		expect(response.status).toBe(201);
 		reference = response.body.reference;
@@ -221,7 +226,8 @@ describe("CivicOS end-to-end workflow and private-safe tracking", () => {
 		const base = { category: "Pothole", description: "Damage", location: "Library", anonymous: true };
 		for (const extra of [
 			{ category: "Nonexistent" }, { longitude: 181, latitude: 40 },
-			{ anonymous: false }, { photo: "data:image/svg+xml;base64,PHN2Zz4=" }
+			{ anonymous: false }, { photo: "data:image/svg+xml;base64,PHN2Zz4=" },
+			{ photos: [residentPhoto, residentPhoto, residentPhoto, residentPhoto] }
 		]) {
 			expect((await request(app).post(`/api/civic/public/${slugA}/requests`).send({ ...base, ...extra })).status).toBe(400);
 		}
@@ -253,23 +259,27 @@ describe("CivicOS end-to-end workflow and private-safe tracking", () => {
 		await expect(database.tenantTransaction(tenantA, tx =>
 			database.rows("DELETE FROM civic.history RETURNING id", {}, tx))).rejects.toThrow();
 	});
-	it("allows field start/completion but not verification, then permits staff verification", async () => {
+	it("allows field start/completion and three field photos while exposing only resident photos", async () => {
 		for (const status of ["in_progress", "completed"]) {
 			expect((await api("post", `/staff/requests/${requestId}/transition`, fieldToken).send({ status, notes: "Work update" })).status).toBe(200);
+			const publicDetail = await request(app).get(`/api/civic/public/${slugA}/requests/${requestId}`);
+			expect(publicDetail.body.photos).toEqual([residentPhoto, residentPhoto, residentPhoto]);
 		}
 		expect((await api("post", `/staff/requests/${requestId}/transition`, fieldToken).send({ status: "verified" })).status).toBe(403);
-		expect((await api("post", `/staff/requests/${requestId}/transition`).send({ status: "verified" })).status).toBe(200);
-	});
-	it("allows no more than three ticket photos", async () => {
-		const fieldPhoto = "data:image/png;base64,iVBORw0KGgo=";
 		for (let index = 0; index < 3; index += 1) {
 			expect((await api("post", `/staff/requests/${requestId}/field-photo`, fieldToken).send({ photo: fieldPhoto })).status).toBe(201);
 		}
 		const rejected = await api("post", `/staff/requests/${requestId}/field-photo`, fieldToken).send({ photo: fieldPhoto });
 		expect(rejected.status).toBe(400);
-		expect(rejected.body.message).toBe("A ticket can have no more than three photos");
+		expect(rejected.body.message).toBe("A ticket can have no more than three field photos");
 		const detail = await api("get", `/staff/requests/${requestId}`, fieldToken);
+		expect(detail.body.photos).toHaveLength(3);
 		expect(detail.body.field_photos).toHaveLength(3);
+		const beforeVerification = await request(app).get(`/api/civic/public/${slugA}/requests/${requestId}`);
+		expect(beforeVerification.body.photos).toEqual([residentPhoto, residentPhoto, residentPhoto]);
+		expect((await api("post", `/staff/requests/${requestId}/transition`).send({ status: "verified" })).status).toBe(200);
+		const verified = await request(app).get(`/api/civic/public/${slugA}/requests/${requestId}`);
+		expect(verified.body.photos).toEqual([residentPhoto, residentPhoto, residentPhoto, fieldPhoto, fieldPhoto, fieldPhoto]);
 	});
 	it("tracks safely without names, notes, coordinates, contact, assignments or photos", async () => {
 		const tracked = await request(app).post(`/api/civic/public/${slugA}/track`).send({ reference });

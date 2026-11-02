@@ -1,7 +1,7 @@
 'use client';
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { civicApi, CivicRecord, Portal as PortalData, displayDate, readPhoto } from '@/lib/civic';
+import { civicApi, CivicRecord, Portal as PortalData, displayDate, readPublicPhoto } from '@/lib/civic';
 import MapEmbed from './MapEmbed';
 import styles from './civic.module.css';
 
@@ -70,7 +70,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
     try {
       const files = data.getAll('photos').filter((value): value is File => value instanceof File && value.size > 0);
       if (files.length > 3) throw new Error('You can upload no more than three photos.');
-      const photos = await Promise.all(files.map(readPhoto));
+      const photos = await Promise.all(files.map(readPublicPhoto));
       const longitude = data.get('longitude')?.toString();
       const latitude = data.get('latitude')?.toString();
       const response = await civicApi<{ reference: string }>(`/public/${portal!.slug}/requests`, {
@@ -200,16 +200,17 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             <div className={styles.inline}><label>Longitude<input name="longitude" type="number" step="any" min={-180} max={180} value={point?.[0] ?? ''} onChange={event => setPoint([Number(event.target.value), point?.[1] ?? 0])} /></label>
               <label>Latitude<input name="latitude" type="number" step="any" min={-90} max={90} value={point?.[1] ?? ''} onChange={event => setPoint([point?.[0] ?? 0, Number(event.target.value)])} /></label></div>
             <label>Photos (optional, up to 3; 2 MB each)<input name="photos" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label>
+            <p className={styles.hint}>Your photos will be visible to everyone once the request is reviewed. Do not include private or sensitive information. Photos over 512 KB are compressed to JPEG before upload.</p>
             {settings?.anonymous && <label className={styles.checkbox}><input type="checkbox" checked={anonymous} onChange={event => setAnonymous(event.target.checked)} /> Report anonymously</label>}
             {!anonymous && <><label>Your name<input name="name" required maxLength={100} autoComplete="name" /></label><label>Email<input name="email" type="email" required maxLength={254} autoComplete="email" /></label><label>Phone (optional)<input name="phone" maxLength={50} type="tel" autoComplete="tel" /></label></>}
             <button disabled={busy} className={styles.primary}>{busy ? 'Submitting…' : 'Submit request'}</button>
-          </form></section><aside><h3>Pin the location</h3><p className={styles.hint}>Click on the map to add coordinates. Contact details are never published; photos require staff publication.</p><MapEmbed portal={portal} onPoint={setPoint} /></aside></div>}
+          </form></section><aside><h3>Pin the location</h3><p className={styles.hint}>Click on the map to add coordinates. Contact details are never published.</p><MapEmbed portal={portal} onPoint={setPoint} /></aside></div>}
       </div>
       {publicRequestDetail && <div className={styles.modalBackdrop} role="presentation">
         <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="public-ticket-title">
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{publicRequestDetail.status}</span><h2 id="public-ticket-title">{publicRequestDetail.title}</h2></div><button className={styles.secondary} onClick={() => setPublicRequestDetail(null)}>Close</button></div>
           <div className={styles.ticketModalLayout}><div><p>{publicRequestDetail.category || 'Community request'}</p>{publicRequestDetail.description && <p>{publicRequestDetail.description}</p>}<p>Reported {displayDate(publicRequestDetail.created_at, portal.settings)}</p>{publicRequestDetail.completed_at && <p>Completed {displayDate(publicRequestDetail.completed_at, portal.settings)}</p>}<p>Updated {displayDate(publicRequestDetail.updated_at, portal.settings)}</p>
-            {publicRequestDetail.photos.map((photo, index) => <img key={photo} className={styles.ticketPhoto} src={photo} alt={`Ticket photo ${index + 1} for ${publicRequestDetail.title}`} />)}
+            {publicRequestDetail.photos.map((photo, index) => <img key={index} className={styles.ticketPhoto} src={photo} alt={`Ticket photo ${index + 1} for ${publicRequestDetail.title}`} />)}
             <h3>Public status updates</h3><ol className={styles.timeline}>{publicRequestDetail.history.map((event, index) => <li key={index}><strong>{event.status}</strong><small>{displayDate(event.timestamp, portal.settings)}</small></li>)}</ol></div>
             <aside><h3>Public location</h3><p>{publicRequestDetail.location || 'No location description was provided.'}</p>{publicRequestDetail.longitude !== null && publicRequestDetail.latitude !== null ?
               <><p className={styles.hint}>Pinned coordinates: {publicRequestDetail.latitude}, {publicRequestDetail.longitude}</p><MapEmbed portal={portal} center={[publicRequestDetail.longitude, publicRequestDetail.latitude]} marker={[publicRequestDetail.longitude, publicRequestDetail.latitude]} zoom={16} onSelect={id => void selectPublicRequest(id)} /></> :

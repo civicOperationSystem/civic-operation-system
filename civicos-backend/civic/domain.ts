@@ -11,6 +11,9 @@ export type State = { key: string; label: string; next: string[]; field?: boolea
 export function fieldCanEnter(state: State): boolean {
 	return state.field ?? ["in_progress", "completed"].includes(state.key);
 }
+export function publicRequestPhotos(status: string | null, photos: string[], fieldPhotos: string[]): string[] {
+	return status === "verified" ? [...photos, ...fieldPhotos] : [...photos];
+}
 export type Settings = {
 	logo: string; color: string; timezone: string; language: string;
 	locations: string[]; departments: string[]; categories: string[];

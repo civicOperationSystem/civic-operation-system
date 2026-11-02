@@ -8,7 +8,7 @@ The [frontend](frontend/) hosts three connected experiences:
 
 The GIS project is embedded through an origin-checked message channel. Session tokens stay in memory and are sent in API headers, not URL parameters.
 
-Field completion photos can be PNG, JPEG or WebP files up to 5 MiB each. Files over 512 KiB are compressed to JPEG in the browser to at most 512 KiB before upload; tickets allow three photos total, including resident photos.
+Residents can submit up to three photos, each up to 2 MiB. Field workers can add up to three more, each up to 5 MiB. Photos over 512 KiB are compressed to JPEG in the browser before upload. Resident photos are public after review; field photos become public when the current request state is `verified`. Reopening a request hides field photos until it is verified again. Private tracking remains photo-free.
 
 Only CivicOS is shipped; the legacy collaboration UI and microservices have been removed.
 

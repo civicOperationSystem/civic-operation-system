@@ -1,0 +1,135 @@
+{
+  "planHash": "17922db30a1c8b5331bfc56389945a3b67e9966b3b9d0e602b96543dfb082544",
+  "phase": "standalone",
+  "recordedAtUtc": "2026-11-02T20:53:22.7541451Z",
+  "retryCount": 2,
+  "resetBaseline": false,
+  "complete": true,
+  "result": {
+    "setupSucceeded": true,
+    "setupDurationMs": 72899,
+    "setupFailureOutput": null,
+    "assertions": [
+      {
+        "name": "typescript-no-emit",
+        "kind": "process",
+        "verificationMethod": "exit-code",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "",
+        "durationMs": 4051
+      },
+      {
+        "name": "production-build",
+        "kind": "process",
+        "verificationMethod": "exit-code",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "\r\n\u003E civicos-platform@0.1.0 build\r\n\u003E next build\r\n\r\n  \u25B2 Next.js 14.2.35\r\n  - Environments: .env.local\r\n\r\n   Creating an optimized production build ...\r\n \u2713 Compiled successfully\r\n   Linting and checking validity of types ...\r\n   Collecting page data ...\r\n   Generating static pages (0/8) ...\r\n   Generating static pages (2/8) \r\n   Generating static pages (4/8) \r\n   Generating static pages (6/8) \r\n \u2713 Generating static pages (8/8)\r\n   Finalizing page optimization ...\r\n   Collecting build traces ...\r\n\r\nRoute (app)                              Size     First Load JS\r\n\u250C \u25CB /                                    142 B           105 kB\r\n\u251C \u25CB /_not-found                          873 B          88.2 kB\r\n\u251C \u25CB /field                               147 B           175 kB\r\n\u251C \u25CB /platform                            4.96 kB         167 kB\r\n\u251C \u25CB /portal                              143 B           105 kB\r\n\u251C \u0192 /portal/[slug]                       142 B           105 kB\r\n\u2514 \u25CB /staff                               147 B           175 kB\r\n\u002B First Load JS shared by all            87.3 kB\r\n  \u251C chunks/117-59e030f1b0f89043.js       31.7 kB\r\n  \u251C chunks/fd9d1056-42a1c2df9c4a85a8.js  53.6 kB\r\n  \u2514 other shared chunks (total)          1.96 kB\r\n\r\n\r\n\u25CB  (Static)   prerendered as static content\r\n\u0192  (Dynamic)  server-rendered on demand\r\n\r\n",
+        "durationMs": 38066
+      },
+      {
+        "name": "public-portal-serves",
+        "kind": "http-probe",
+        "verificationMethod": "http-status",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": null,
+        "outputSample": "HTTP 200\n\u003C!DOCTYPE html\u003E\u003Chtml lang=\u0022en\u0022\u003E\u003Chead\u003E\u003Cmeta charSet=\u0022utf-8\u0022/\u003E\u003Cmeta name=\u0022viewport\u0022 content=\u0022width=device-width, initial-scale=1\u0022/\u003E\u003Clink rel=\u0022stylesheet\u0022 href=\u0022/_next/static/css/db1d4dfc835fa72e.css\u0022 data-precedence=\u0022next\u0022/\u003E\u003Clink rel=\u0022stylesheet\u0022 href=\u0022/_next/static/css/2a74bcc25233b370.css\u0022 data-precedence=\u0022next\u0022/\u003E\u003Clink rel=\u0022preload\u0022 as=\u0022script\u0022 fetchPriority=\u0022low\u0022 href=\u0022/_next/static/chunks/webpack-edc742d7e9f7f3eb.js\u0022/\u003E\u003Cscript src=\u0022/_next/static/chunks/fd9d1056-42a1c2df9c4a85a8.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/117-59e030f1b0f89043.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/main-app-92c47de8ad099845.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/933-15c19d6e9f844e0f.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/405-5d7c85ed7e483212.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/app/portal/page-1094d2fb125681d6.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Ctitle\u003ECivicOS \u2014 Your community, connected\u003C/title\u003E\u003Cmeta name=\u0022description\u0022 content=\u0022Public services, staff operations and field work on one permission-aware platform.\u0022/\u003E\u003Cscript src=\u0022/_next/static/chunks/polyfills-42372ed130431b0a.js\u0022 noModule=\u0022\u0022\u003E\u003C/script\u003E\u003C/head\u003E\u003Cbody\u003E\u003Cmain class=\u0022civic_shell__OLZPm\u0022 style=\u0022--civic-accent:#0d9488\u0022\u003E\u003Cheader class=\u0022civic_header__cDH7T\u0022\u003E\u003Ca class=\u0022civic_brand__Mqdz4\u0022 href=\u0022/\u0022\u003EC\u003Cspan\u003EO\u003C/span\u003E \u003Cstrong\u003ECivicOS\u003C/strong\u003E\u003C/a\u003E\u003Cdiv class=\u0022civic_headerLinks__lbVHa\u0022\u003E\u003Ca href=\u0022/platform\u0022\u003EPlatform owner\u003C/a\u003E\u003Ca href=\u0022/staff?org=\u0022\u003EStaff sign in\u003C/a\u003E\u003Ca href=\u0022/field?org=\u0022\u003EField workspace\u003C/a\u003E\u003C/div\u003E\u003C/header\u003E\u003Csection class=\u0022civic_welcome__bOFvo\u0022\u003E\u003Cp class=\u0022civic_eyebrow__aE7kS\u0022\u003EONE COMMUNITY. ONE CONNECTED PLATFORM.\u003C/p\u003E\u003Ch1\u003EEveryday services.\u003Cbr/\u003EA stronger community.\u003C/h1\u003E\u003Cp\u003EFind local information, report a problem, and follow the work that matters to your community.\u003C/p\u003E\u003Cform class=\u0022civic_inline__h3z7d\u0022 role=\u0022search\u0022 aria-label=\u0022Find an organization\u0022\u003E\u003Clabel\u003EOrganization name or workspace address\u003Cinput type=\u0022search\u0022 list=\u0022organization-suggestions\u0022 autoComplete=\u0022off\u0022 placeholder=\u0022Organization name or /portal/village-b\u0022 value=\u0022\u0022/\u003E\u003C/label\u003E\u003Cdatalist id=\u0022organization-suggestions\u0022\u003E\u003C/datalist\u003E\u003Cbutton disabled=\u0022\u0022 class=\u0022civic_primary__M2_dB\u0022\u003ESearch\u003C/button\u003E\u003C/form\u003E\u003Cp role=\u0022status\u0022\u003ELoading organizations\u2026\u003C/p\u003E\u003C/section\u003E\u003Cfooter class=\u0022civic_footer__8rB1b\u0022\u003E\u003Cstrong\u003ECivicOS\u003C/strong\u003E\u003Cspan\u003EOpen infrastructure for everyday community life.\u003C/span\u003E\u003Cspan\u003EPublic portal \u00B7 No account required\u003C/span\u003E\u003C/footer\u003E\u003C/main\u003E\u003Cscript src=\u0022/_next/static/chunks/webpack-edc742d7e9f7f3eb.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript\u003E(self.__next_f=self.__next_f||[]).push([0]);self.__next_f.push([2,null])\u003C/script\u003E\u003Cscript\u003Eself.__next_f.push([1,\u00221:HL[\\\u0022/_next/static/css/db1d4dfc835fa72e.css\\\u0022,\\\u0022style\\\u0022]\\n2:HL[\\\u0022/_next/static/css/2a74bcc25233b370.css\\\u0022,\\\u0022style\\\u0022]\\n\u0022])\u003C/script\u003E\u003Cscript\u003Eself.__next_f.push([1,\u00223:I[2846,[],\\\u0022\\\u0022]\\n5:I[9459,[\\\u0022933\\\u0022,\\\u0022static/chunks/933-15c19d6e9f844e0f.js\\\u0022,\\\u0022405\\\u0022,\\\u0022static/chunks/405-5d7c85ed7e483212.js\\\u0022,\\\u0022668\\\u0022,\\\u0022static/chunks/app/portal/page-1094d2fb125681d6.js\\\u0022],\\\u0022default\\\u0022]\\n6:I[4707,[],\\\u0022\\\u0022]\\n7:I[6423,[],\\\u0022\\\u0022]\\n9:I[1060,[],\\\u0022\\\u0022]\\na:[]\\n\u0022])\u003C/script\u003E\u003Cscript\u003Eself.__next_f.push([1,\u00220:[\\\u0022$\\\u0022,\\\u0022$L3\\\u0022,null,{\\\u0022buildId\\\u0022:\\\u0022qU41GIYMiTHXSMHir5mzO\\\u0022,\\\u0022assetPrefix\\\u0022:\\\u0022\\\u0022,\\\u0022urlParts\\\u0022:[\\\u0022\\\u0022,\\\u0022portal\\\u0022],\\\u0022initialTree\\\u0022:[\\\u0022\\\u0022,{\\\u0022children\\\u0022:[\\\u0022portal\\\u0022,{\\\u0022children\\\u0022:[\\\u0022__PAGE__\\\u0022,{}]}]},\\\u0022$undefined\\\u0022,\\\u0022$undefined\\\u0022,true],\\\u0022initialSeedData\\\u0022:[\\\u0022\\\u0022,{\\\u0022children\\\u0022:[\\\u0022portal\\\u0022,{\\\u0022children\\\u0022:[\\\u0022__PAGE__\\\u0022,{},[[\\\u0022$L4\\\u0022,[\\\u0022$\\\u0022,\\\u0022$L5\\\u0022,null,{}],[[\\\u0022$\\\u0022,\\\u0022link\\\u0022,\\\u00220\\\u0022,{\\\u0022rel\\\u0022:\\\u0022stylesheet\\\u0022,\\\u0022href\\\u0022:\\\u0022/_next/static/css/2a74bcc25233b370.css\\\u0022,\\\u0022precedence\\\u0022:\\\u0022next\\\u0022,\\\u0022crossOrigin\\\u0022:\\\u0022$undefined\\\u0022}]]],null],null]},[null,[\\\u0022$\\\u0022,\\\u0022$L6\\\u0022,null,{\\\u0022parallelRouterKey\\\u0022:\\\u0022children\\\u0022,\\\u0022segmentPath\\\u0022:[\\\u0022children\\\u0022,\\\u0022portal\\\u0022,\\\u0022children\\\u0022],\\\u0022error\\\u0022:\\\u0022$undefined\\\u0022,\\\u0022errorStyles\\\u0022:\\\u0022$undefined\\\u0022,\\\u0022errorScripts\\\u0022:\\\u0022$undefined\\\u0022,\\\u0022template\\\u0022:[\\\u0022$\\\u0022,\\\u0022$L7\\\u0022,null,{}],\\\u0022templateStyles\\\u0022:\\\u0022$undefined\\\u0022,\\\u0022templateScripts\\\u0022:\\\u0022$undefined\\\u0022,\\\u0022notFound\\\u0022:\\\u0022$undefined\\\u0022,\\\u0022notFoundStyles\\\u0022:\\\u0022$undefined\\\u0022}]],null]},[[[[\\\u0022$\\\u0022,\\\u0022link\\\u0022,\\\u00220\\\u0022,{\\\u0022rel\\\u0022:\\\u0022stylesheet\\\u0022,\\\u0022href\\\u0022:\\\u0022/_next/static/css/db1d4\n\u2026[truncated]",
+        "durationMs": 2460
+      },
+      {
+        "name": "tests-pass",
+        "kind": "process",
+        "verificationMethod": "test-results",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "\r\n\u003E civicos-platform@0.1.0 test\r\n\u003E node --experimental-strip-types --test tests/*.test.mjs\r\n\r\n(node:29148) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///c:/Users/default.LAPTOP-J5GV1TT8/OneDrive/Documenti/a_csc%20training/codyza/civic-operation-system/civicos-platform/frontend/src/lib/civic.ts is not specified and it doesn\u0027t parse as CommonJS.\r\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\r\nTo eliminate this warning, add \u0022type\u0022: \u0022module\u0022 to \\\\?\\c:\\Users\\default.LAPTOP-J5GV1TT8\\OneDrive\\Documenti\\a_csc training\\codyza\\civic-operation-system\\civicos-platform\\frontend\\package.json.\r\n(Use \u0060node --trace-warnings ...\u0060 to show where the warning was created)\r\n\u2714 shared API sends tenant-aware bearer sessions in headers, never URLs (43.451ms)\r\n\u2714 public tracking sends capability in a POST body and surfaces errors (1.1955ms)\r\n\u2714 dates respect organization locale and timezone (31.8911ms)\r\n\u2714 unsupported and oversized photos fail explicitly before upload (2.8446ms)\r\n\u2714 configured field access overrides the legacy in-progress/completed convention (1.359ms)\r\n\u2139 tests 5\r\n\u2139 suites 0\r\n\u2139 pass 5\r\n\u2139 fail 0\r\n\u2139 cancelled 0\r\n\u2139 skipped 0\r\n\u2139 todo 0\r\n\u2139 duration_ms 328.8615\r\n",
+        "durationMs": 1240,
+        "testResults": {
+          "testFramework": "unknown",
+          "runnerDetectedFrom": "none",
+          "testsTotal": 0,
+          "testsPassed": 0,
+          "testsFailed": 0,
+          "testsSkipped": 0,
+          "parseFailed": true
+        }
+      }
+    ],
+    "executions": [
+      {
+        "source": "setup[0]",
+        "resolvedExecutable": "C:\\Users\\default.LAPTOP-J5GV1TT8\\AppData\\Local\\Author Software\\nvm\\.nodejs\\npm.EXE",
+        "args": [
+          "ci"
+        ],
+        "cwd": "c:\\Users\\default.LAPTOP-J5GV1TT8\\OneDrive\\Documenti\\a_csc training\\codyza\\civic-operation-system\\civicos-platform\\frontend",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "typescript-no-emit",
+        "resolvedExecutable": "C:\\Users\\default.LAPTOP-J5GV1TT8\\AppData\\Local\\Author Software\\nvm\\.nodejs\\npx.EXE",
+        "args": [
+          "tsc",
+          "--noEmit"
+        ],
+        "cwd": "c:\\Users\\default.LAPTOP-J5GV1TT8\\OneDrive\\Documenti\\a_csc training\\codyza\\civic-operation-system\\civicos-platform\\frontend",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "production-build",
+        "resolvedExecutable": "C:\\Users\\default.LAPTOP-J5GV1TT8\\AppData\\Local\\Author Software\\nvm\\.nodejs\\npm.EXE",
+        "args": [
+          "run",
+          "build"
+        ],
+        "cwd": "c:\\Users\\default.LAPTOP-J5GV1TT8\\OneDrive\\Documenti\\a_csc training\\codyza\\civic-operation-system\\civicos-platform\\frontend",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "public-portal-serves",
+        "resolvedExecutable": "C:\\Users\\default.LAPTOP-J5GV1TT8\\AppData\\Local\\Author Software\\nvm\\.nodejs\\npm.EXE",
+        "args": [
+          "run",
+          "start",
+          "--",
+          "-p",
+          "3002"
+        ],
+        "cwd": "c:\\Users\\default.LAPTOP-J5GV1TT8\\OneDrive\\Documenti\\a_csc training\\codyza\\civic-operation-system\\civicos-platform\\frontend",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "tests-pass",
+        "resolvedExecutable": "C:\\Users\\default.LAPTOP-J5GV1TT8\\AppData\\Local\\Author Software\\nvm\\.nodejs\\npm.EXE",
+        "args": [
+          "test"
+        ],
+        "cwd": "c:\\Users\\default.LAPTOP-J5GV1TT8\\OneDrive\\Documenti\\a_csc training\\codyza\\civic-operation-system\\civicos-platform\\frontend",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      }
+    ]
+  }
+}

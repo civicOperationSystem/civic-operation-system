@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS civic.records (
   FOREIGN KEY (tenant_id, assigned_to) REFERENCES civic.members(tenant_id, id),
   FOREIGN KEY (tenant_id, archived_by) REFERENCES civic.members(tenant_id, id),
   CHECK ((longitude IS NULL) = (latitude IS NULL)),
-  CHECK (cardinality(photos) + cardinality(field_photos) <= 3)
+  CONSTRAINT records_photo_limit_check CHECK (cardinality(photos) <= 3 AND cardinality(field_photos) <= 3)
 );
 ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS archived_at timestamptz;
 ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS archived_by uuid;
@@ -73,9 +73,20 @@ UPDATE civic.records SET photos = ARRAY[photo]
 ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS field_photos text[] NOT NULL DEFAULT '{}';
 UPDATE civic.records SET field_photos = ARRAY[field_photo]
   WHERE field_photo IS NOT NULL AND cardinality(field_photos) = 0;
+DO $$
+DECLARE old_constraint record;
+BEGIN
+  FOR old_constraint IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'civic.records'::regclass AND contype = 'c'
+      AND pg_get_constraintdef(oid) ~ 'cardinality\(photos\).*\+.*cardinality\(field_photos\)'
+  LOOP
+    EXECUTE format('ALTER TABLE civic.records DROP CONSTRAINT %I', old_constraint.conname);
+  END LOOP;
+END $$;
 ALTER TABLE civic.records DROP CONSTRAINT IF EXISTS records_photo_limit_check;
 ALTER TABLE civic.records ADD CONSTRAINT records_photo_limit_check
-  CHECK (cardinality(photos) + cardinality(field_photos) <= 3);
+  CHECK (cardinality(photos) <= 3 AND cardinality(field_photos) <= 3);
 ALTER TABLE civic.records DROP CONSTRAINT IF EXISTS records_tenant_id_archived_by_fkey;
 ALTER TABLE civic.records ADD CONSTRAINT records_tenant_id_archived_by_fkey
   FOREIGN KEY (tenant_id, archived_by) REFERENCES civic.members(tenant_id, id);

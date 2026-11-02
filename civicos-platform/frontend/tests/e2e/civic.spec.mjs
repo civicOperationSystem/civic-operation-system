@@ -81,12 +81,16 @@ async function signInWithMagicLink(page, path, slug, email) {
 
 test('resident → staff → mobile field → verification → private-safe tracking', async ({ page, browser }) => {
   const slug = process.env.E2E_SLUG;
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lX8AAAAASUVORK5CYII=', 'base64');
   await page.goto(`/portal/${slug}`);
   await expect(page.getByRole('heading', { name: 'Browser Test Community', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Report a problem', exact: false }).first().click();
   await page.getByRole('combobox', { name: 'Category', exact: true }).selectOption('Pothole');
   await page.getByLabel('What happened?').fill('A dangerous pothole outside the library.');
   await page.getByLabel('Location', { exact: true }).fill('Library entrance');
+  await page.getByLabel('Photos (optional, up to 3; 2 MB each)').setInputFiles(
+    Array.from({ length: 3 }, (_, index) => ({ name: `resident-${index}.png`, mimeType: 'image/png', buffer: png })),
+  );
   const reportMap = page.frameLocator('iframe[title="Interactive CivicOS community map"]');
   const canvas = reportMap.getByLabel('Interactive community infrastructure and service request map');
   await expect(reportMap.getByText('0 authorized locations', { exact: true })).toBeVisible();
@@ -154,24 +158,31 @@ test('resident → staff → mobile field → verification → private-safe trac
   await expect(fieldMap.locator('section[aria-busy="false"]')).toBeVisible({ timeout: 30000 });
   await fieldMap.getByRole('button', { name: /Pothole/ }).click();
   await expect(field.getByRole('heading', { name: 'Add completion evidence', exact: true })).toBeVisible();
-  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lX8AAAAASUVORK5CYII=', 'base64');
-  await field.getByLabel(/Completion photo/).setInputFiles({
-    name: 'field-photo.png', mimeType: 'image/png', buffer: Buffer.concat([png, Buffer.alloc(2 * 1024 * 1024)]),
-  });
-  await expect(field.getByText('Field photo uploaded.', { exact: true })).toBeVisible();
-  await expect(field.getByAltText('Field work photo 1')).toBeVisible();
+  for (let index = 0; index < 3; index++) {
+    await field.getByLabel(/Completion photo/).setInputFiles({
+      name: `field-photo-${index}.png`, mimeType: 'image/png', buffer: Buffer.concat([png, Buffer.alloc(2 * 1024 * 1024)]),
+    });
+    await expect(field.getByAltText(`Field work photo ${index + 1}`)).toBeVisible();
+  }
+  await expect(field.getByLabel('Completion photo (3/3)')).toBeDisabled();
   await field.getByLabel('Internal notes').fill('Crew began work');
   await field.getByRole('button', { name: 'Start work', exact: true }).click();
   await expect(field.getByText('Workflow updated. The transition has been recorded.', { exact: true })).toBeVisible();
   await field.getByRole('button', { name: 'Complete work', exact: true }).click();
   await expect(field.getByRole('button', { name: 'Complete work', exact: true })).toHaveCount(0);
   await expect(field.getByRole('button', { name: 'Move to Verified' })).toHaveCount(0);
+  const calendar = await (await page.request.get(`/api/civic/public/${slug}/requests/calendar`)).json();
+  const publicId = calendar.find(record => record.title === 'Pothole').id;
+  const before = await (await page.request.get(`/api/civic/public/${slug}/requests/${publicId}`)).json();
+  expect(before.photos).toHaveLength(3);
   expect(await field.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await mobile.close();
 
   await page.getByRole('button', { name: 'Pothole', exact: true }).click();
   await page.getByRole('button', { name: 'Move to Verified' }).click();
   await expect(page.getByText('Workflow updated. The transition has been recorded.', { exact: true })).toBeVisible();
+  const after = await (await page.request.get(`/api/civic/public/${slug}/requests/${publicId}`)).json();
+  expect(after.photos).toHaveLength(6);
   await page.getByRole('button', { name: 'Organization settings', exact: true }).click();
   await page.getByLabel('Organization name').fill('Connected Community');
   await page.getByRole('button', { name: 'Save organization settings' }).click();
