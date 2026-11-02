@@ -260,6 +260,17 @@ describe("CivicOS end-to-end workflow and private-safe tracking", () => {
 		expect((await api("post", `/staff/requests/${requestId}/transition`, fieldToken).send({ status: "verified" })).status).toBe(403);
 		expect((await api("post", `/staff/requests/${requestId}/transition`).send({ status: "verified" })).status).toBe(200);
 	});
+	it("allows no more than three ticket photos", async () => {
+		const fieldPhoto = "data:image/png;base64,iVBORw0KGgo=";
+		for (let index = 0; index < 3; index += 1) {
+			expect((await api("post", `/staff/requests/${requestId}/field-photo`, fieldToken).send({ photo: fieldPhoto })).status).toBe(201);
+		}
+		const rejected = await api("post", `/staff/requests/${requestId}/field-photo`, fieldToken).send({ photo: fieldPhoto });
+		expect(rejected.status).toBe(400);
+		expect(rejected.body.message).toBe("A ticket can have no more than three photos");
+		const detail = await api("get", `/staff/requests/${requestId}`, fieldToken);
+		expect(detail.body.field_photos).toHaveLength(3);
+	});
 	it("tracks safely without names, notes, coordinates, contact, assignments or photos", async () => {
 		const tracked = await request(app).post(`/api/civic/public/${slugA}/track`).send({ reference });
 		expect(tracked.status).toBe(200);

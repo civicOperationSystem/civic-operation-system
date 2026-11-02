@@ -194,6 +194,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     const state = session?.portal.settings.states.find(item => item.key === detail.status);
     return !!state && (state.key === 'completed' || state.next.length === 0);
   })();
+  const ticketPhotoCount = detail ? (detail.photo ? 1 : 0) + detail.field_photos.length : 0;
   async function logout() {
     try {
       if (isCivicSupabaseConfigured()) {
@@ -268,10 +269,10 @@ export default function Workspace({ field = false }: { field?: boolean }) {
         {view === 'map' && <><p className={styles.hint}>Your permissions determine which requests and locations appear. Select a request marker to open its work record.</p><MapEmbed portal={session.portal} token={token} revision={revision} onSelect={id => void selectRequest(id)} /></>}
         {detail && ['requests', 'calendar', 'map'].includes(view) && <article className={`${styles.card} ${styles.detail}`}>
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{stateLabel(detail.status)}</span><h3>{detail.title}</h3></div><button onClick={() => setDetail(null)} className={styles.secondary}>Close</button></div>
-          {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload a photo to document the fix.</p>
+          {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload photos to document the fix. Tickets allow up to three photos total.</p>
             <MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint || session.portal.settings.center} zoom={fieldPoint ? 16 : undefined} onPoint={setFieldPoint} />
             <div className={styles.inline}><label>Longitude<input readOnly value={fieldPoint?.[0] ?? ''} placeholder="Click the map" /></label><label>Latitude<input readOnly value={fieldPoint?.[1] ?? ''} placeholder="Click the map" /></label></div>
-            <label>Completion photo<input type="file" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy} onChange={event => {
+            <label>Completion photo ({ticketPhotoCount}/3)<input type="file" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy || ticketPhotoCount >= 3} onChange={event => {
               const file = event.currentTarget.files?.[0] || null;
               event.currentTarget.value = '';
               void uploadFieldPhoto(file);
@@ -279,7 +280,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
           <p>{detail.description}</p><p>{detail.location}</p><code>{detail.reference}</code>
           {detail.contact && <p>Private contact: {detail.contact.name} · {detail.contact.email} {detail.contact.phone}</p>}
           {detail.photo && <img src={detail.photo} alt="Resident-submitted issue photo" />}
-          {detail.field_photo && <img src={detail.field_photo} alt="Field work photo" />}
+          {detail.field_photos.map((photo, index) => <img key={photo} src={photo} alt={`Field work photo ${index + 1}`} />)}
           <h3>Work updates</h3><p className={styles.hint}>Notes and staff identities remain private. Residents see only the public status and update times.</p>
           <label>Private note<textarea rows={3} maxLength={5000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <label>Note visibility<select value={field ? 'down_chain' : noteVisibility} disabled={field} onChange={event => setNoteVisibility(event.target.value as 'role_only' | 'down_chain')}><option value="role_only">Only my role level</option><option value="down_chain">Share down the operational chain</option></select></label>

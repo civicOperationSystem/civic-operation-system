@@ -22,7 +22,7 @@ export type History = {
 };
 export type RequestDetail = CivicRecord & {
   contact: { name: string; email: string; phone: string } | null;
-  photo: string | null; field_photo: string | null; history: History[];
+  photo: string | null; field_photos: string[]; history: History[];
 };
 export type Tracking = {
   reference: string; title: string; category: string; status: string; reported: string; updated: string;

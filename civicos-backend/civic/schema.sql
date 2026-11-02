@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS civic.records (
   contact jsonb,
   photo text,
   field_photo text,
+  field_photos text[] NOT NULL DEFAULT '{}',
   url text,
   assigned_to uuid,
   archived_at timestamptz,
@@ -59,11 +60,18 @@ CREATE TABLE IF NOT EXISTS civic.records (
   UNIQUE (tenant_id, id),
   FOREIGN KEY (tenant_id, assigned_to) REFERENCES civic.members(tenant_id, id),
   FOREIGN KEY (tenant_id, archived_by) REFERENCES civic.members(tenant_id, id),
-  CHECK ((longitude IS NULL) = (latitude IS NULL))
+  CHECK ((longitude IS NULL) = (latitude IS NULL)),
+  CHECK (cardinality(field_photos) + CASE WHEN photo IS NULL THEN 0 ELSE 1 END <= 3)
 );
 ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS archived_at timestamptz;
 ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS archived_by uuid;
 ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS field_photo text;
+ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS field_photos text[] NOT NULL DEFAULT '{}';
+UPDATE civic.records SET field_photos = ARRAY[field_photo]
+  WHERE field_photo IS NOT NULL AND cardinality(field_photos) = 0;
+ALTER TABLE civic.records DROP CONSTRAINT IF EXISTS records_photo_limit_check;
+ALTER TABLE civic.records ADD CONSTRAINT records_photo_limit_check
+  CHECK (cardinality(field_photos) + CASE WHEN photo IS NULL THEN 0 ELSE 1 END <= 3);
 ALTER TABLE civic.records DROP CONSTRAINT IF EXISTS records_tenant_id_archived_by_fkey;
 ALTER TABLE civic.records ADD CONSTRAINT records_tenant_id_archived_by_fkey
   FOREIGN KEY (tenant_id, archived_by) REFERENCES civic.members(tenant_id, id);

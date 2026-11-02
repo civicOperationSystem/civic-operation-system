@@ -20,6 +20,7 @@ type RecordRow = {
 	status: string | null; reference: string | null; assigned_to: string | null;
 	photo: string | null;
 	field_photo: string | null;
+	field_photos: string[];
 	created_at: string; updated_at: string;
 };
 type ChatMessage = {
@@ -30,7 +31,7 @@ type HistoryRow = {
 	notes: string; note_visibility: "role_only" | "down_chain"; assigned_to: string | null; created_at: string;
 };
 const publicColumns = "id, kind, title, description, location, longitude, latitude, url, created_at, updated_at";
-const staffColumns = "id, kind, title, description, location, category, longitude, latitude, published, status, reference, assigned_to, archived_at, field_photo, created_at, updated_at";
+const staffColumns = "id, kind, title, description, location, category, longitude, latitude, published, status, reference, assigned_to, archived_at, field_photo, field_photos, created_at, updated_at";
 const contentKinds = ["service", "announcement", "event", "project", "facility", "document", "emergency", "infrastructure"];
 export const civicRouter = Router();
 
@@ -204,7 +205,7 @@ civicRouter.get("/public/:slug/requests/calendar", endpoint(async (req, res) => 
 			`SELECT record.id, record.title, record.category, record.status, record.created_at,
 				(SELECT history.created_at FROM civic.history history WHERE history.request_id = record.id
 					AND history.new_status = 'completed' ORDER BY history.created_at DESC, history.id DESC LIMIT 1) AS completed_at
-			 FROM civic.records record WHERE record.kind = 'request' AND record.published AND record.archived_at IS NULL
+			 FROM civic.records record WHERE record.kind = 'request' AND record.status <> 'submitted' AND record.archived_at IS NULL
 			 ORDER BY record.created_at DESC LIMIT 500`,
 			{}, tx));
 	res.json(records.map(record => ({
@@ -219,16 +220,25 @@ civicRouter.get("/public/:slug/requests/calendar", endpoint(async (req, res) => 
 civicRouter.get("/public/:slug/requests/:id", endpoint(async (req, res) => {
 	const portal = await portalBySlug(req.params.slug);
 	const result = await tenantTransaction(portal.id, async tx => {
-		const [record] = await rows<Pick<RecordRow, "id" | "title" | "description" | "category" | "status" | "location" | "longitude" | "latitude" | "photo" | "field_photo" | "created_at" | "updated_at">>(
-			"SELECT id, title, description, category, status, location, longitude, latitude, photo, field_photo, created_at, updated_at FROM civic.records WHERE id = :id AND kind = 'request' AND published AND archived_at IS NULL",
+		const [record] = await rows<Pick<RecordRow, "id" | "title" | "description" | "category" | "status" | "location" | "longitude" | "latitude" | "photo" | "field_photos" | "published" | "created_at" | "updated_at">>(
+			"SELECT id, title, description, category, status, location, longitude, latitude, photo, field_photos, published, created_at, updated_at FROM civic.records WHERE id = :id AND kind = 'request' AND status <> 'submitted' AND archived_at IS NULL",
 			{ id: identifier(req.params.id) }, tx);
 		if (!record) throw new CivicError(404, "Public request not found");
 		const history = await rows<{ new_status: string; created_at: string }>(
 			"SELECT new_status, created_at FROM civic.history WHERE request_id = :id ORDER BY created_at, id", { id: record.id }, tx);
 		const completedAt = [...history].reverse().find(event => event.new_status === "completed")?.created_at || null;
 		return {
-			...record,
+			id: record.id,
+			title: record.title,
+			category: record.category,
 			status: publicStatus(record.status, portal.settings.states),
+			description: record.published ? record.description : "",
+			location: record.published ? record.location : "",
+			longitude: record.published ? record.longitude : null,
+			latitude: record.published ? record.latitude : null,
+			photos: record.published ? [record.photo, ...record.field_photos].filter((value): value is string => !!value) : [],
+			created_at: record.created_at,
+			updated_at: record.updated_at,
 			completed_at: completedAt,
 			history: history.map(event => ({ status: publicStatus(event.new_status, portal.settings.states), timestamp: event.created_at }))
 		};
@@ -530,11 +540,15 @@ secured("post", "/staff/requests/:id/field-photo", null, async (req, res, contex
 	const record = await requestFor(context, req.params.id, true);
 	const fieldPhoto = photo(req.body.photo);
 	if (!fieldPhoto) throw new CivicError(400, "Choose a field photo to upload");
+	if ((record.photo ? 1 : 0) + record.field_photos.length >= 3) {
+		throw new CivicError(400, "A ticket can have no more than three photos");
+	}
 	const coordinatesProvided = req.body.longitude !== undefined || req.body.latitude !== undefined;
 	const point = coordinatesProvided ? coordinates(req.body.longitude, req.body.latitude) : {
 		longitude: record.longitude, latitude: record.latitude
 	};
-	await rows(`UPDATE civic.records SET field_photo = :fieldPhoto, longitude = :longitude, latitude = :latitude, updated_at = now()
+	await rows(`UPDATE civic.records SET field_photo = :fieldPhoto, field_photos = array_append(field_photos, :fieldPhoto),
+		longitude = :longitude, latitude = :latitude, updated_at = now()
 		WHERE id = :id RETURNING id`, { id: record.id, fieldPhoto, ...point }, context.tx);
 	res.status(201).json({ uploaded: true, ...point });
 }, rateLimit);
