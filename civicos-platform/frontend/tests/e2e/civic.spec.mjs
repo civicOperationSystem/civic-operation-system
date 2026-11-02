@@ -3,6 +3,34 @@ import { randomUUID } from 'node:crypto';
 
 const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 const userIds = new Map();
+test('main portal offers public organizations and opens the selected workspace', async ({ page }) => {
+  const organization = {
+    id: 'directory-fixture', name: 'Directory Test Town', slug: 'directory-test',
+    settings: { language: 'en', timezone: 'UTC', color: '#0d9488', departments: [], services: [], anonymous: true },
+  };
+  await page.route('**/api/civic/public/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/organizations/list')) {
+      await route.fulfill({ json: [{ name: organization.name, slug: organization.slug }] });
+    } else if (path.endsWith('/portal')) {
+      await route.fulfill({ status: 404, json: { message: 'No portal is configured for this domain' } });
+    } else if (path.endsWith('/content')) {
+      await route.fulfill({ json: [] });
+    } else if (path.endsWith(`/${organization.slug}`)) {
+      await route.fulfill({ json: organization });
+    } else {
+      await route.abort();
+    }
+  });
+  await page.goto('/portal');
+  await expect(page.getByRole('heading', { name: organization.name, exact: true })).toBeVisible();
+  await page.getByRole('searchbox').fill('/portal/directory-test');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByRole('link', { name: `Open ${organization.name} portal` }).click();
+  await expect(page.getByRole('heading', { name: organization.name, exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Staff sign in' })).toHaveAttribute('href', `/staff?org=${organization.slug}`);
+});
+
 function magicLinkToken(email) {
   const now = Math.floor(Date.now() / 1000);
   return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({
@@ -28,8 +56,15 @@ test('resident → staff → mobile field → verification → private-safe trac
   await page.getByRole('combobox', { name: 'Category', exact: true }).selectOption('Pothole');
   await page.getByLabel('What happened?').fill('A dangerous pothole outside the library.');
   await page.getByLabel('Location', { exact: true }).fill('Library entrance');
-  await page.getByLabel('Longitude', { exact: true }).fill('-73.98');
-  await page.getByLabel('Latitude', { exact: true }).fill('40.75');
+  const reportMap = page.frameLocator('iframe[title="Interactive CivicOS community map"]');
+  const canvas = reportMap.getByLabel('Interactive community infrastructure and service request map');
+  await expect(reportMap.getByText('0 authorized locations', { exact: true })).toBeVisible();
+  await expect(reportMap.locator('section[aria-busy="false"]')).toBeVisible({ timeout: 30000 });
+  await page.locator('iframe[title="Interactive CivicOS community map"]').scrollIntoViewIfNeeded();
+  await canvas.click({ position: { x: 150, y: 180 } });
+  await expect(reportMap.getByLabel('Longitude', { exact: true })).not.toHaveValue('');
+  await expect(page.getByLabel('Longitude', { exact: true })).toHaveValue(await reportMap.getByLabel('Longitude', { exact: true }).inputValue());
+  await expect(page.getByLabel('Latitude', { exact: true })).toHaveValue(await reportMap.getByLabel('Latitude', { exact: true }).inputValue());
   await page.getByRole('button', { name: 'Submit request', exact: true }).click();
   await expect(page.getByText('Request received.', { exact: true })).toBeVisible();
   const reference = await page.locator('code').innerText();

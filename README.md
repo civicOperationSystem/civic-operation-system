@@ -60,6 +60,8 @@ Visit http://localhost:3100/platform to sign in as the configured platform owner
 
 ### Supabase email sign-in
 
+The main public portal at `/` or `/portal` includes organization cards populated by `GET /api/civic/public/organizations/list`. The public directory exposes only organization names and slugs, ordered by name. Search by organization name or workspace address (for example `/portal/village-b`), then choose **Open portal** on a card. Loading, empty, search-no-match and error states are shown explicitly. Direct organization URLs and custom-domain portal lookup remain supported.
+
 The platform owner, staff, and field login screens send one-time email links using Supabase Auth. In the Supabase dashboard, configure the site URL and allowlist `http://localhost:3100/**` for local development. For production, allowlist `https://your-frontend-domain.example/**`; this supports the `/platform` callback and organization-specific staff/field URLs without adding every organization separately. Configure an SMTP provider before production so your organization controls reliable email delivery. Use the same project URL and publishable/anon key in the `SUPABASE_*` and `NEXT_PUBLIC_SUPABASE_*` settings; never put a Supabase service-role key in the frontend.
 
 Staff email addresses must first be added to that organization's **People & roles** list. Supabase can create the authentication identity when the member follows a link, but CivicOS only grants access after matching the verified email to an active member in the selected organization. A Supabase account alone does not grant access. Residents can still submit public service requests without an account.
@@ -72,6 +74,14 @@ For a Supabase database, set both connection URLs:
 - `CIVIC_DATABASE_URL`: the non-owner `civic_app` connection used by the running API. The provisioner reads its encoded password from this URL unless `CIVIC_DB_PASSWORD` is set separately.
 
 Use the exact URLs from the Supabase project's **Connect** page; percent-encode reserved characters in passwords. For a persistent backend on an IPv4-only network, Supabase's shared **session pooler** is IPv4-compatible. A direct connection is IPv4-compatible only when the project's IPv4 add-on is enabled. The backend requires TLS and verifies the server certificate. The application connection must use `civic_app`, never the database owner or a `BYPASSRLS` role.
+
+If provisioning or the API reports `SELF_SIGNED_CERT_IN_CHAIN`, download the database server's root CA certificate from your Supabase project's **Database settings → SSL**. Set `CIVIC_DATABASE_SSL_CA` to the complete PEM certificate, including the `BEGIN CERTIFICATE` and `END CERTIFICATE` lines. It accepts actual line breaks or literal `\n` sequences. Use the CA that signs your selected database/pooler endpoint; do not download certificates from untrusted sources.
+
+On Vercel, add `CIVIC_DATABASE_SSL_CA` to the **backend project's** environment variables for the target environment, then redeploy. For local migration commands, set `$env:CIVIC_DATABASE_SSL_CA = Get-Content -Raw 'C:\certs\supabase-root.crt'` before running `npm run civic:init`. Compose passes this variable to both the backend and provisioner. Leave it empty when the endpoint already uses a trusted public CA. This applies only to URL-based PostgreSQL connections; local non-URL database configuration is unchanged.
+
+Certificate and hostname verification are enabled by default. URL parameters such as `sslmode`, `sslrootcert`, `sslcert`, `sslkey`, `ssl` and `uselibpqcompat` do not override the application's TLS policy; configure custom database CA trust through `CIVIC_DATABASE_SSL_CA`.
+
+For temporary troubleshooting only, set `CIVIC_DATABASE_SSL_REJECT_UNAUTHORIZED=false` in the backend Vercel project's target environment and redeploy. This preserves database TLS encryption but disables certificate and hostname verification, leaving the connection vulnerable to interception. The backend logs a warning while this bypass is active. Do not use it for production traffic or real community data. To restore verification, configure the correct CA, set this variable to `true` (or remove it), and redeploy. Compose passes the same setting to the backend and provisioner. Never use the process-wide `NODE_TLS_REJECT_UNAUTHORIZED=0` setting.
 
 When using Supabase, leave the local `POSTGRES_PASSWORD` and `CIVIC_DB_PASSWORD` empty if they are not needed, set the two URLs above, then provision and start only the application services:
 
@@ -128,6 +138,16 @@ Set these project environment variables:
 The frontend’s Next.js rewrite proxies `/api/civic` to the backend, so browser API requests remain same-origin and the API does not need public CORS access. Use HTTPS Vercel and Supabase URLs in production. Keep `CIVIC_ADMIN_DATABASE_URL` out of Vercel runtime variables; use it only in the trusted, one-time schema migration/provisioning environment. Set the Supabase Auth site URL to your frontend domain and allowlist `https://your-frontend-domain.example/**`. Add the production frontend domain to the map’s allowed parent origins.
 
 Vercel serverless functions can scale out, so the API uses a small per-instance PostgreSQL pool. Choose a Supabase connection/pooler URL appropriate for serverless deployments, and do not expose the database owner connection to the API.
+
+### Post-deployment readiness
+
+After deploying the backend, manually call `GET /readyz` on the **API deployment domain**, not the frontend:
+
+```powershell
+curl.exe --fail-with-body --show-error https://YOUR-API-DOMAIN/readyz
+```
+
+The endpoint is unauthenticated and disables caching. Each request verifies required runtime configuration, database connectivity, safe runtime database role and schema access. It returns `200` with `{"service":"CivicOS","status":"ready"}` on success, or `503` with `{"service":"CivicOS","status":"not_ready"}` on failure. Failure details are logged server-side, not exposed in the response. It does not check SMTP delivery or contact Supabase Auth. The existing `/health` endpoint is unchanged; no automatic post-deployment trigger is configured.
 
 For a custom domain:
 

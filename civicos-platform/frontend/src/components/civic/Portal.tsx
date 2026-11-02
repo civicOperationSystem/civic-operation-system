@@ -8,6 +8,11 @@ import styles from './civic.module.css';
 const kinds = ['all', 'service', 'announcement', 'event', 'project', 'facility', 'document', 'emergency', 'infrastructure'];
 export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [slug, setSlug] = useState(initialSlug);
+  const [organizations, setOrganizations] = useState<{ name: string; slug: string }[]>([]);
+  const [organizationsLoading, setOrganizationsLoading] = useState(true);
+  const [organizationsError, setOrganizationsError] = useState('');
+  const [organizationSearch, setOrganizationSearch] = useState('');
+  const [organizationQuery, setOrganizationQuery] = useState('');
   const [portal, setPortal] = useState<PortalData | null>(null);
   const [content, setContent] = useState<CivicRecord[]>([]);
   const [view, setView] = useState('overview');
@@ -33,6 +38,21 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
     finally { setBusy(false); }
   }
   useEffect(() => { void load(initialSlug || new URLSearchParams(window.location.search).get('org') || undefined); }, [initialSlug]);
+  useEffect(() => {
+    const abort = new AbortController();
+    void civicApi<{ name: string; slug: string }[]>('/public/organizations/list', { signal: abort.signal })
+      .then(items => {
+        if (!Array.isArray(items) || items.some(item => !item || typeof item.name !== 'string' || typeof item.slug !== 'string')) {
+          throw new Error('The organization directory returned invalid data. Check the backend deployment.');
+        }
+        if (!abort.signal.aborted) setOrganizations(items);
+      })
+      .catch(failure => {
+        if (!abort.signal.aborted) setOrganizationsError(failure instanceof Error ? failure.message : 'Could not load organizations');
+      })
+      .finally(() => { if (!abort.signal.aborted) setOrganizationsLoading(false); });
+    return () => abort.abort();
+  }, []);
   async function report(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setBusy(true);
     const form = event.currentTarget;
@@ -62,6 +82,8 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
     finally { setBusy(false); }
   }
   const settings = portal?.settings;
+  const visibleOrganizations = organizations.filter(organization =>
+    `${organization.name} /portal/${organization.slug}`.toLowerCase().includes(organizationQuery.trim().toLowerCase()));
   return <main className={styles.shell} style={{ '--civic-accent': settings?.color || '#0d9488' } as React.CSSProperties}>
     <header className={styles.header}>
       <Link href="/" className={styles.brand}>C<span>O</span> <strong>CivicOS</strong></Link>
@@ -71,10 +93,23 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       <p className={styles.eyebrow}>ONE COMMUNITY. ONE CONNECTED PLATFORM.</p>
       <h1>Everyday services.<br />A stronger community.</h1>
       <p>Find local information, report a problem, and follow the work that matters to your community.</p>
-      <form onSubmit={event => { event.preventDefault(); void load(slug); }} className={styles.inline}>
-        <label>Organization workspace<input value={slug} onChange={event => setSlug(event.target.value)} placeholder="your-community" required pattern="[a-z0-9-]{3,60}" /></label>
-        <button disabled={busy} className={styles.primary}>Open portal</button>
+      <form onSubmit={event => { event.preventDefault(); setOrganizationQuery(organizationSearch); }} className={styles.inline} role="search" aria-label="Find an organization">
+        <label>Organization name or workspace address<input type="search" value={organizationSearch} onChange={event => { setOrganizationSearch(event.target.value); if (!event.target.value) setOrganizationQuery(''); }} placeholder="Organization name or /portal/village-b" /></label>
+        <button disabled={organizationsLoading || !!organizationsError} className={styles.primary}>Search</button>
       </form>
+      {organizationsError && <p role="alert" className={styles.error}>{organizationsError}</p>}
+      {organizationsLoading && <p role="status">Loading organizations…</p>}
+      {!organizationsLoading && !organizationsError && <section className={styles.directory} aria-label="Available organizations">
+        <h2>Available organizations</h2>
+        {!organizations.length ? <p role="status">No organizations are available yet. A platform owner can create one from the platform console.</p> :
+          !visibleOrganizations.length ? <p role="status">No organizations match your search.</p> :
+          <div className={styles.organizationCards}>{visibleOrganizations.map(organization => <article key={organization.slug} className={styles.card}>
+            <span className={styles.tag}>Public portal</span>
+            <h3>{organization.name}</h3>
+            <p className={styles.workspaceAddress}>/portal/{organization.slug}</p>
+            <Link href={`/portal/${encodeURIComponent(organization.slug)}`} className={styles.secondary} aria-label={`Open ${organization.name} portal`}>Open portal</Link>
+          </article>)}</div>}
+      </section>}
       {error && <p role="alert" className={styles.error}>{error}</p>}
     </section> : <>
       <section className={styles.hero}>

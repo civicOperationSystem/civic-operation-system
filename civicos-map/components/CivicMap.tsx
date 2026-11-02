@@ -117,12 +117,12 @@ export default function CivicMap() {
           if (properties?.kind === 'request') send({ type: 'civic-map-select', id: properties.id });
         });
         current.on('click', event => {
-          if (!current || !contextRef.current?.selectable || current.queryRenderedFeatures(event.point, { layers: ['places', 'clusters'] }).length) return;
-          const point: [number, number] = [Number(event.lngLat.lng.toFixed(6)), Number(event.lngLat.lat.toFixed(6))];
+          if (!current) return;
+          const point: [number, number] = [Number(event.lngLat.wrap().lng.toFixed(6)), Number(event.lngLat.lat.toFixed(6))];
           setSelectedPoint(point);
           pin.current?.remove();
           pin.current = new Marker({ color: '#e04b34' }).setLngLat(point).addTo(current);
-          send({ type: 'civic-map-point', point });
+          if (contextRef.current?.selectable) send({ type: 'civic-map-point', point });
         });
         for (const layer of ['places', 'clusters']) {
           current.on('mouseenter', layer, () => { if (current) current.getCanvas().style.cursor = 'pointer'; });
@@ -178,16 +178,18 @@ export default function CivicMap() {
         <label>Search locations<input value={search} onChange={event => setSearch(event.target.value)} placeholder="Facility, infrastructure, request…" /></label>
         <label>Layer<select value={kind} onChange={event => setKind(event.target.value)}>{['all', 'request', 'facility', 'infrastructure', 'service', 'project', 'event', 'emergency'].map(item => <option key={item} value={item}>{item === 'all' ? 'All authorized layers' : item}</option>)}</select></label>
         <label>Request status<select value={status} onChange={event => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map(item => <option key={item}>{item}</option>)}</select></label>
+        <label>Longitude<input name="longitude" type="number" step="any" value={selectedPoint?.[0] ?? ''} readOnly placeholder="Click the map" /></label>
+        <label>Latitude<input name="latitude" type="number" step="any" value={selectedPoint?.[1] ?? ''} readOnly placeholder="Click the map" /></label>
         <div className={styles.actions}><button disabled={!filtered.features.length} onClick={fitLocations}>Fit locations</button><button disabled={!context || loading} onClick={() => setRevision(value => value + 1)}>Refresh</button></div>
         {(error || mapError) && <p className={styles.error} role="alert">{error || mapError}</p>}
         <p className={styles.count} role="status">{loading ? 'Loading authorized locations…' : `${filtered.features.length} authorized locations`}</p>
         {data.truncated && <p role="status" className={styles.hint}>The map is limited to the latest 5,000 authorized locations.</p>}
-        {context?.selectable && <p className={styles.hint}>{selectedPoint ? `Selected: ${selectedPoint[0]}, ${selectedPoint[1]}` : 'Click an empty area of the map to pin your report location.'}</p>}
+        <p className={styles.hint} role="status">{selectedPoint ? `Selected: ${selectedPoint[0]}, ${selectedPoint[1]}` : 'Click the map to show longitude and latitude.'}</p>
         <ul className={styles.locations}>{filtered.features.slice(0, 200).map(feature => <li key={feature.id}><button onClick={() => select(feature)}><span className={styles.kind}>{feature.properties.kind}</span><strong>{feature.properties.title}</strong><small>{feature.properties.status || feature.properties.location || 'Community location'}</small></button></li>)}</ul>
         {!loading && !error && context && !filtered.features.length && <p className={styles.hint}>No authorized locations match these filters. Unpublished requests are not shown publicly.</p>}
         {filtered.features.length > 200 && <p className={styles.hint}>Showing the first 200 in the list. All returned locations remain visible on the map. Narrow your filters to find more.</p>}
       </aside>
-      <section className={styles.mapArea}><div ref={container} className={styles.map} /><div className={styles.legend}><span>● Requests</span><span>● Facilities</span><span>● Infrastructure</span></div></section>
+      <section className={styles.mapArea} aria-busy={!map}><div ref={container} className={styles.map} /><div className={styles.legend}><span>● Requests</span><span>● Facilities</span><span>● Infrastructure</span></div></section>
     </div>
   </main>;
 }
