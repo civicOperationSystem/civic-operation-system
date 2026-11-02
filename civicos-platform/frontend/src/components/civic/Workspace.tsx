@@ -292,7 +292,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
               catch (failure) { setDetail(detail); throw failure; }
               setRevision(value => value + 1);
             }, 'Map visibility updated');
-          }} /> Publish completed ticket to the public map and calendar</label>}
+          }} /> Publish completed ticket details, location, and photos to the public portal</label>}
           {!showArchived && has('read') && <button disabled={busy} className={styles.secondary} onClick={() => void archive()}>Archive request</button>}
           {showArchived && has('manage') && <button disabled={busy} className={styles.secondary} onClick={() => void archive(true)}>Restore request</button>}
           <h3>Audit trail</h3><ol className={styles.timeline}>{detail.history.map(event => <li key={event.id}><strong>{stateLabel(event.previous_status)} → {stateLabel(event.new_status)}</strong><small>{memberLabel(event.actor)} · {displayDate(event.created_at, session.portal.settings)}</small>{event.assigned_to && <small>Assigned: {memberLabel(event.assigned_to)}</small>}{event.notes && <p>{event.notes}</p>}</li>)}</ol>

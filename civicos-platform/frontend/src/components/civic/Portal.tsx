@@ -8,8 +8,8 @@ import styles from './civic.module.css';
 const kinds = ['all', 'service', 'announcement', 'event', 'project', 'facility', 'document', 'emergency', 'infrastructure'];
 type PublicCalendarRequest = { id: string; title: string; category: string | null; status: string; created_at: string };
 type PublicRequestDetail = PublicCalendarRequest & {
-  location: string; longitude: number | null; latitude: number | null; updated_at: string;
-  field_photo: string | null; history: { status: string; timestamp: string }[];
+  description: string; location: string; longitude: number | null; latitude: number | null; updated_at: string;
+  photo: string | null; field_photo: string | null; history: { status: string; timestamp: string }[];
 };
 export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [slug, setSlug] = useState(initialSlug);
@@ -152,6 +152,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             {item.url && <a href={item.url} target="_blank" rel="noopener noreferrer">Open document or information ↗</a>}
           </article>)}</div>
           {!content.length && <div className={styles.empty}><h3>Your community hub is ready.</h3><p>Published services, events, facilities and announcements will appear here.</p></div>}
+          {!!calendarRequests.length && <section className={styles.publicTickets}><h3>Published community work</h3><div className={styles.cards}>{calendarRequests.map(record => <button key={record.id} className={styles.card} onClick={() => void selectPublicRequest(record.id)}><span className={styles.tag}>{record.status}</span><strong>{record.title}</strong><small>{record.category || 'Community request'}</small><span>Open ticket details</span></button>)}</div></section>}
           <section className={styles.contact}><h3>Here to help</h3><p>{settings?.contact || 'Contact your community staff through the service request form.'}</p>
             <div className={styles.inline}>{settings?.services.map(service => <span className={styles.tag} key={service}>{service}</span>)}</div></section>
         </>}
@@ -193,7 +194,8 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       {publicRequestDetail && <div className={styles.modalBackdrop} role="presentation">
         <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="public-ticket-title">
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{publicRequestDetail.status}</span><h2 id="public-ticket-title">{publicRequestDetail.title}</h2></div><button className={styles.secondary} onClick={() => setPublicRequestDetail(null)}>Close</button></div>
-          <div className={styles.ticketModalLayout}><div><p>{publicRequestDetail.category || 'Community request'}</p><p>Reported {displayDate(publicRequestDetail.created_at, portal.settings)}</p><p>Updated {displayDate(publicRequestDetail.updated_at, portal.settings)}</p>
+          <div className={styles.ticketModalLayout}><div><p>{publicRequestDetail.category || 'Community request'}</p><p>{publicRequestDetail.description}</p><p>Reported {displayDate(publicRequestDetail.created_at, portal.settings)}</p><p>Updated {displayDate(publicRequestDetail.updated_at, portal.settings)}</p>
+            {publicRequestDetail.photo && <img className={styles.ticketPhoto} src={publicRequestDetail.photo} alt={`Original report for ${publicRequestDetail.title}`} />}
             {publicRequestDetail.field_photo && <img className={styles.ticketPhoto} src={publicRequestDetail.field_photo} alt={`Field work for ${publicRequestDetail.title}`} />}
             <h3>Public status updates</h3><ol className={styles.timeline}>{publicRequestDetail.history.map((event, index) => <li key={index}><strong>{event.status}</strong><small>{displayDate(event.timestamp, portal.settings)}</small></li>)}</ol></div>
             <aside><h3>Public location</h3><p>{publicRequestDetail.location || 'Location details are not available.'}</p>{publicRequestDetail.longitude !== null && publicRequestDetail.latitude !== null ?

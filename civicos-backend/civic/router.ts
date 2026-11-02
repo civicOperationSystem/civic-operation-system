@@ -18,6 +18,7 @@ type RecordRow = {
 	id: string; kind: string; title: string; description: string; location: string; category: string | null;
 	longitude: number | null; latitude: number | null; published: boolean;
 	status: string | null; reference: string | null; assigned_to: string | null;
+	photo: string | null;
 	field_photo: string | null;
 	created_at: string; updated_at: string;
 };
@@ -213,8 +214,8 @@ civicRouter.get("/public/:slug/requests/calendar", endpoint(async (req, res) => 
 civicRouter.get("/public/:slug/requests/:id", endpoint(async (req, res) => {
 	const portal = await portalBySlug(req.params.slug);
 	const result = await tenantTransaction(portal.id, async tx => {
-		const [record] = await rows<Pick<RecordRow, "id" | "title" | "category" | "status" | "location" | "longitude" | "latitude" | "field_photo" | "created_at" | "updated_at">>(
-			"SELECT id, title, category, status, location, longitude, latitude, field_photo, created_at, updated_at FROM civic.records WHERE id = :id AND kind = 'request' AND published AND archived_at IS NULL",
+		const [record] = await rows<Pick<RecordRow, "id" | "title" | "description" | "category" | "status" | "location" | "longitude" | "latitude" | "photo" | "field_photo" | "created_at" | "updated_at">>(
+			"SELECT id, title, description, category, status, location, longitude, latitude, photo, field_photo, created_at, updated_at FROM civic.records WHERE id = :id AND kind = 'request' AND published AND archived_at IS NULL",
 			{ id: identifier(req.params.id) }, tx);
 		if (!record) throw new CivicError(404, "Public request not found");
 		const history = await rows<{ new_status: string; created_at: string }>(
