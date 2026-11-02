@@ -269,7 +269,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
         {detail && ['requests', 'calendar', 'map'].includes(view) && <article className={`${styles.card} ${styles.detail}`}>
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{stateLabel(detail.status)}</span><h3>{detail.title}</h3></div><button onClick={() => setDetail(null)} className={styles.secondary}>Close</button></div>
           {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload a photo to document the fix.</p>
-            <MapEmbed portal={session.portal} token={token} revision={revision} onPoint={setFieldPoint} />
+            <MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint || session.portal.settings.center} zoom={fieldPoint ? 16 : undefined} onPoint={setFieldPoint} />
             <div className={styles.inline}><label>Longitude<input readOnly value={fieldPoint?.[0] ?? ''} placeholder="Click the map" /></label><label>Latitude<input readOnly value={fieldPoint?.[1] ?? ''} placeholder="Click the map" /></label></div>
             <label>Completion photo<input type="file" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy} onChange={event => {
               const file = event.currentTarget.files?.[0] || null;
