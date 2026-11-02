@@ -147,6 +147,11 @@ function publicStatus(status: string | null, states: State[]): string {
 	return states.find(state => state.key === status)?.label || "Status unavailable";
 }
 
+civicRouter.get("/public/organizations/list", endpoint(async (_req, res) => {
+	res.json(await rows<{ name: string; slug: string }>(
+		"SELECT name, slug FROM civic.portals ORDER BY lower(name), slug"
+	));
+}));
 civicRouter.get("/public/portal", endpoint(async (req, res) => {
 	const domain = text(req.query.domain, "domain", 253).toLowerCase();
 	const [portal] = await rows<Portal>("SELECT * FROM civic.portals WHERE domain = :domain", { domain });
