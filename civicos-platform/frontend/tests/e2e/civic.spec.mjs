@@ -121,7 +121,13 @@ test('resident → staff → mobile field → verification → private-safe trac
   const field = await mobile.newPage();
   await signInWithMagicLink(field, 'field', slug, 'worker@example.org');
   await expect(field.getByRole('heading', { name: 'Your work, in one place' })).toBeVisible();
-  await field.getByRole('button', { name: /Pothole/ }).click();
+  await field.getByRole('button', { name: 'Community map', exact: true }).click();
+  const fieldMap = field.frameLocator('iframe[title="Interactive CivicOS community map"]').first();
+  await expect(fieldMap.getByText('Permission-aware workspace', { exact: true })).toBeVisible();
+  await expect(fieldMap.getByText('1 authorized locations', { exact: true })).toBeVisible();
+  await expect(fieldMap.locator('section[aria-busy="false"]')).toBeVisible({ timeout: 30000 });
+  await fieldMap.getByRole('button', { name: /Pothole/ }).click();
+  await expect(field.getByRole('heading', { name: 'Add completion evidence', exact: true })).toBeVisible();
   await field.getByLabel('Internal notes').fill('Crew began work');
   await field.getByRole('button', { name: 'Start work', exact: true }).click();
   await expect(field.getByText('Workflow updated. The transition has been recorded.', { exact: true })).toBeVisible();
