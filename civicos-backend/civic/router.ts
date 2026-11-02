@@ -23,8 +23,12 @@ type RecordRow = {
 type ChatMessage = {
 	id: string; sender_id: string; sender_email: string; body: string; created_at: string;
 };
+type HistoryRow = {
+	id: string; actor: string | null; actor_role: string | null; previous_status: string | null; new_status: string;
+	notes: string; note_visibility: "role_only" | "down_chain"; assigned_to: string | null; created_at: string;
+};
 const publicColumns = "id, kind, title, description, location, longitude, latitude, url, created_at, updated_at";
-const staffColumns = "id, kind, title, description, location, category, longitude, latitude, published, status, reference, assigned_to, created_at, updated_at";
+const staffColumns = "id, kind, title, description, location, category, longitude, latitude, published, status, reference, assigned_to, archived_at, created_at, updated_at";
 const contentKinds = ["service", "announcement", "event", "project", "facility", "document", "emergency", "infrastructure"];
 export const civicRouter = Router();
 
@@ -122,6 +126,26 @@ function requireOperations(context: Context): void {
 		throw new CivicError(403, "Permission denied");
 	}
 }
+	function roleLevel(context: Context): "field" | "staff" | "admin" {
+		if (context.permissions.includes("manage")) return "admin";
+		return context.permissions.includes("read") ? "staff" : "field";
+	}
+	function noteVisibility(value: unknown, context: Context): "role_only" | "down_chain" {
+		if (roleLevel(context) === "field") return "down_chain";
+		if (value === undefined || value === "role_only") return "role_only";
+		if (value === "down_chain") return "down_chain";
+		throw new CivicError(400, "Invalid note visibility");
+	}
+	function canReadNote(event: HistoryRow, context: Context): boolean {
+		if (!event.notes) return true;
+		const viewer = roleLevel(context);
+		const author = event.actor_role || "staff";
+		if (author === "field") return viewer === "field" || viewer === "staff" || viewer === "admin";
+		if (event.note_visibility === "down_chain") {
+			return author === "admin" || viewer === author || (author === "staff" && viewer === "field");
+		}
+		return viewer === author;
+	}
 async function requestFor(context: Context, id: unknown, lock = false): Promise<RecordRow> {
 	requireOperations(context);
 	const [record] = await rows<RecordRow>(
@@ -305,20 +329,25 @@ secured("get", "/staff/requests", null, async (req, res, context) => {
 	requireOperations(context);
 	const page = Number(req.query.page || 1);
 	if (!Number.isInteger(page) || page < 1 || page > 100000) throw new CivicError(400, "Invalid page");
-	res.json(await rows(`SELECT ${staffColumns} FROM civic.records WHERE kind = 'request'${scope(context)}
+	const archived = req.query.archived === "true";
+	if (archived && !context.permissions.includes("manage")) throw new CivicError(403, "Permission denied");
+	res.json(await rows(`SELECT ${staffColumns} FROM civic.records WHERE kind = 'request' AND archived_at IS ${archived ? "NOT " : ""}NULL${scope(context)}
 		ORDER BY created_at DESC LIMIT 100 OFFSET :offset`,
 		{ actor: context.member.id, offset: (page - 1) * 100 }, context.tx));
 });
 secured("get", "/staff/requests/:id", null, async (req, res, context) => {
 	const record = await requestFor(context, req.params.id);
 	const [privateData] = await rows("SELECT contact, photo FROM civic.records WHERE id = :id", { id: record.id }, context.tx);
-	const history = await rows("SELECT id, actor, previous_status, new_status, notes, assigned_to, created_at FROM civic.history WHERE request_id = :id ORDER BY created_at, id", { id: record.id }, context.tx);
-	res.json({ ...record, ...privateData, history });
+	const history = await rows<HistoryRow>("SELECT id, actor, actor_role, previous_status, new_status, notes, note_visibility, assigned_to, created_at FROM civic.history WHERE request_id = :id ORDER BY created_at, id", { id: record.id }, context.tx);
+	res.json({ ...record, ...privateData, history: history.map(event => ({
+		...event, notes: canReadNote(event, context) ? event.notes : "", note_visibility: canReadNote(event, context) ? event.note_visibility : null
+	})) });
 });
 secured("post", "/staff/requests/:id/transition", "transition", async (req, res, context) => {
 	const record = await requestFor(context, req.params.id, true);
 	const next = text(req.body.status, "status", 40);
 	const notes = text(req.body.notes || "", "notes", 5000, false);
+	const visibility = noteVisibility(req.body.note_visibility, context);
 	const state = context.portal.settings.states.find(item => item.key === record.status);
 	if (!state?.next.includes(next)) throw new CivicError(409, "This workflow transition is not allowed");
 	const target = context.portal.settings.states.find(item => item.key === next);
@@ -328,10 +357,10 @@ secured("post", "/staff/requests/:id/transition", "transition", async (req, res,
 	if (next === "assigned" && !record.assigned_to) throw new CivicError(409, "Assign a worker before entering assigned status");
 	await rows("UPDATE civic.records SET status = :next, updated_at = now() WHERE id = :id RETURNING id",
 		{ id: record.id, next }, context.tx);
-	await rows(`INSERT INTO civic.history(id, tenant_id, request_id, actor, previous_status, new_status, notes, assigned_to)
-		VALUES (:history, :tenant, :id, :actor, :previous, :next, :notes, :assigned) RETURNING id`, {
+	await rows(`INSERT INTO civic.history(id, tenant_id, request_id, actor, actor_role, previous_status, new_status, notes, note_visibility, assigned_to)
+		VALUES (:history, :tenant, :id, :actor, :role, :previous, :next, :notes, :visibility, :assigned) RETURNING id`, {
 		history: randomUUID(), tenant: context.portal.id, id: record.id, actor: context.member.id,
-		previous: record.status, next, notes, assigned: record.assigned_to
+		role: roleLevel(context), previous: record.status, next, notes, visibility, assigned: record.assigned_to
 	}, context.tx);
 	res.json({ status: next });
 });
@@ -345,12 +374,26 @@ secured("post", "/staff/requests/:id/assign", "assign", async (req, res, context
 		throw new CivicError(400, "Account cannot receive work");
 	}
 	await rows("UPDATE civic.records SET assigned_to = :assigned, updated_at = now() WHERE id = :id RETURNING id", { id: record.id, assigned }, context.tx);
-	await rows(`INSERT INTO civic.history(id, tenant_id, request_id, actor, previous_status, new_status, notes, assigned_to)
-		VALUES (:history, :tenant, :id, :actor, :status, :status, :notes, :assigned) RETURNING id`, {
+	await rows(`INSERT INTO civic.history(id, tenant_id, request_id, actor, actor_role, previous_status, new_status, notes, note_visibility, assigned_to)
+		VALUES (:history, :tenant, :id, :actor, :role, :status, :status, :notes, :visibility, :assigned) RETURNING id`, {
 		history: randomUUID(), tenant: context.portal.id, id: record.id, actor: context.member.id,
-		status: record.status, notes: text(req.body.notes || "", "notes", 5000, false), assigned
+		role: roleLevel(context), status: record.status, notes: text(req.body.notes || "", "notes", 5000, false),
+		visibility: noteVisibility(req.body.note_visibility, context), assigned
 	}, context.tx);
 	res.json({ assigned_to: assigned });
+});
+secured("post", "/staff/requests/:id/archive", "read", async (req, res, context) => {
+	const record = await requestFor(context, req.params.id, true);
+	if (record.assigned_to && !context.permissions.includes("read")) throw new CivicError(403, "Permission denied");
+	await rows("UPDATE civic.records SET archived_at = now(), archived_by = :actor, updated_at = now() WHERE id = :id RETURNING id",
+		{ id: record.id, actor: context.member.id }, context.tx);
+	res.json({ archived: true });
+});
+secured("post", "/staff/requests/:id/restore", "manage", async (req, res, context) => {
+	const record = await requestFor(context, req.params.id, true);
+	await rows("UPDATE civic.records SET archived_at = NULL, archived_by = NULL, updated_at = now() WHERE id = :id RETURNING id",
+		{ id: record.id }, context.tx);
+	res.json({ archived: false });
 });
 secured("post", "/staff/requests/:id/visibility", "publish", async (req, res, context) => {
 	const record = await requestFor(context, req.params.id);

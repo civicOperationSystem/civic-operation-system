@@ -121,6 +121,14 @@ docker compose --profile setup run --build --rm `
 
 Provide `CIVIC_ADMIN_DATABASE_URL` and `CIVIC_DATABASE_URL` through the trusted environment for this migration; the runtime password is read from the URL unless `CIVIC_DB_PASSWORD` is set separately. The admin URL is needed only for this setup task, not as a Vercel runtime variable.
 
+### Request board, archival and private notes
+
+Staff and field workspaces display active service requests in workflow-status columns. Staff and administrators can archive a request; archived requests leave the active board. Administrators can enable **Show archived requests** and restore them.
+
+Private notes are retained in the request audit trail but are never public. They default to **Only my role level**. The author can choose **Share down the operational chain** for a staff/admin note; this makes staff notes available to field workers and admin notes available to staff and field workers. Field notes are always visible to field workers, staff, and administrators.
+
+After deploying this version, run the schema-only provisioning command above once so the archive and note-visibility columns exist before using the request board.
+
 ### Deploying on Vercel
 
 No Supabase Edge Functions are required. Supabase provides PostgreSQL and Auth; CivicOS keeps its permission checks and API in the Express backend. Vercel runs that backend as a serverless Express function. Deploy the three experiences as separate Vercel projects from this repository:

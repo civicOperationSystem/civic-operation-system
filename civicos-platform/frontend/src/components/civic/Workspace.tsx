@@ -24,6 +24,8 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [notes, setNotes] = useState('');
+  const [noteVisibility, setNoteVisibility] = useState<'role_only' | 'down_chain'>('role_only');
+  const [showArchived, setShowArchived] = useState(false);
   const [worker, setWorker] = useState('');
   const [roles, setRoles] = useState<Record<string, string[]>>({});
   const [newRole, setNewRole] = useState('');
@@ -58,7 +60,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   const load = useCallback(async (access = token, selectedPage = page) => {
     const current = await civicApi<Session>('/staff/me', { token: access });
     const [requests, people, pages] = await Promise.all([
-      current.permissions.some(item => item === 'read' || item === 'field') ? civicApi<CivicRecord[]>(`/staff/requests?page=${selectedPage}`, { token: access }) : Promise.resolve([]),
+      current.permissions.some(item => item === 'read' || item === 'field') ? civicApi<CivicRecord[]>(`/staff/requests?page=${selectedPage}${showArchived ? '&archived=true' : ''}`, { token: access }) : Promise.resolve([]),
       current.permissions.includes('read') ? civicApi<Member[]>('/staff/members', { token: access }) : Promise.resolve([]),
       current.permissions.includes('publish') ? civicApi<CivicRecord[]>('/staff/content', { token: access }) : Promise.resolve([]),
     ]);
@@ -68,7 +70,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       setRoles(config.roles);
     }
     setRevision(value => value + 1);
-  }, [page, token]);
+  }, [page, token, showArchived]);
   useEffect(() => {
     if (!slug || !isCivicSupabaseConfigured()) return;
     let active = true;
@@ -141,10 +143,17 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   async function transition(next: string) {
     if (!detail) return;
     await action(async () => {
-      await civicApi(`/staff/requests/${detail.id}/transition`, { token, method: 'POST', body: { status: next, notes } });
+      await civicApi(`/staff/requests/${detail.id}/transition`, { token, method: 'POST', body: { status: next, notes, note_visibility: noteVisibility } });
       setDetail(await civicApi<RequestDetail>(`/staff/requests/${detail.id}`, { token }));
       setNotes(''); await load();
     }, 'Workflow updated. The transition has been recorded.');
+  }
+  async function archive(restore = false) {
+    if (!detail) return;
+    await action(async () => {
+      await civicApi(`/staff/requests/${detail.id}/${restore ? 'restore' : 'archive'}`, { token, method: 'POST' });
+      setDetail(null); await load(token, page);
+    }, restore ? 'Request restored to the active board' : 'Request archived');
   }
   const visible = records.filter(record => (!field || record.assigned_to === session?.user.id) &&
     (!status || record.status === status) &&
@@ -195,9 +204,14 @@ export default function Workspace({ field = false }: { field?: boolean }) {
             <div className={styles.stat}><span>In progress on this page</span><strong>{visible.filter(record => record.status === 'in_progress').length}</strong></div><div className={styles.stat}><span>Awaiting verification</span><strong>{visible.filter(record => record.status === 'completed').length}</strong></div></div>
           <div className={styles.inline}><label>Search this page<input placeholder="Category, location, reference…" value={search} onChange={event => setSearch(event.target.value)} /></label>
             <label>Status<select value={status} onChange={event => setStatus(event.target.value)}><option value="">All statuses</option>{session.portal.settings.states.map(state => <option key={state.key} value={state.key}>{state.label}</option>)}</select></label></div>
-          <div style={{ marginTop: 20 }} className={field ? styles.fieldCards : styles.tableWrap}>
-            {field ? visible.map(record => <button key={record.id} className={styles.card} style={{ textAlign: 'left' }} onClick={() => void selectRequest(record.id)}><span className={styles.tag}>{stateLabel(record.status)}</span><h3>{record.title}</h3><p>{record.location}</p><small>Updated {displayDate(record.updated_at, session.portal.settings)}</small></button>) :
-              <table className={styles.table}><thead><tr><th>Request</th><th>Location</th><th>Status</th><th>Assigned to</th><th>Reported</th></tr></thead><tbody>{visible.map(record => <tr key={record.id}><td><button onClick={() => void selectRequest(record.id)}>{record.title}</button><small>{record.reference}</small></td><td>{record.location}</td><td><span className={styles.tag}>{stateLabel(record.status)}</span></td><td>{record.assigned_to ? memberLabel(record.assigned_to) : 'Unassigned'}</td><td>{displayDate(record.created_at, session.portal.settings)}</td></tr>)}</tbody></table>}
+          {has('manage') && <label className={styles.checkbox}><input type="checkbox" checked={showArchived} onChange={event => { setShowArchived(event.target.checked); setPage(1); }} /> Show archived requests</label>}
+          <div style={{ marginTop: 20 }} className={styles.requestBoard}>
+            {session.portal.settings.states.map(state => {
+              const recordsForState = visible.filter(record => record.status === state.key);
+              return <section className={styles.requestColumn} key={state.key}><h3>{state.label}<small>{recordsForState.length}</small></h3>
+                {recordsForState.map(record => <button key={record.id} className={styles.card} onClick={() => void selectRequest(record.id)}><span className={styles.tag}>{record.category}</span><strong>{record.title}</strong><p>{record.location}</p><small>{record.assigned_to ? `Assigned: ${memberLabel(record.assigned_to)}` : 'Unassigned'} · {displayDate(record.updated_at, session.portal.settings)}</small></button>)}
+              </section>;
+            })}
           </div>
           {!visible.length && <div className={styles.empty}><h3>No requests to show.</h3><p>{field ? 'Assigned work will appear here when your team dispatches it.' : 'Requests submitted through the public portal appear here.'}</p></div>}
           <div className={styles.inline} style={{ marginTop: 18 }}><button className={styles.secondary} disabled={busy || page === 1} onClick={() => void action(async () => { await load(token, page - 1); setPage(page - 1); }, '')}>Previous</button><span>Page {page}</span><button className={styles.secondary} disabled={busy || records.length < 100} onClick={() => void action(async () => { await load(token, page + 1); setPage(page + 1); }, '')}>Next</button></div>
@@ -209,14 +223,16 @@ export default function Workspace({ field = false }: { field?: boolean }) {
           {detail.contact && <p>Private contact: {detail.contact.name} · {detail.contact.email} {detail.contact.phone}</p>}
           {detail.photo && <img src={detail.photo} alt="Resident-submitted issue photo" />}
           <h3>Work updates</h3><p className={styles.hint}>Notes and staff identities remain private. Residents see only the public status and update times.</p>
-          <label>Internal notes<textarea rows={3} maxLength={5000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
+          <label>Private note<textarea rows={3} maxLength={5000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
+          <label>Note visibility<select value={field ? 'down_chain' : noteVisibility} disabled={field} onChange={event => setNoteVisibility(event.target.value as 'role_only' | 'down_chain')}><option value="role_only">Only my role level</option><option value="down_chain">Share down the operational chain</option></select></label>
+          {field && <p className={styles.hint}>Field notes are shared with staff and administrators.</p>}
           {has('transition') && <div className={styles.inline}>{nextStates.filter(next => {
             const state = session.portal.settings.states.find(item => item.key === next);
             return (!field && has('read')) || (!!state && fieldCanEnter(state));
           }).map(next => <button key={next} disabled={busy} className={styles.primary} onClick={() => void transition(next)}>{field && next === 'in_progress' ? 'Start work' : field && next === 'completed' ? 'Complete work' : `Move to ${stateLabel(next)}`}</button>)}</div>}
           {has('assign') && !field && <div className={styles.form}><label>Assign a worker<select value={worker} onChange={event => setWorker(event.target.value)}><option value="">Choose a team member</option>{members.filter(member => member.active).map(member => <option key={member.id} value={member.id}>{member.email} · {member.role}</option>)}</select></label>
             <button disabled={busy || !worker} className={styles.secondary} onClick={() => void action(async () => {
-              await civicApi(`/staff/requests/${detail.id}/assign`, { token, method: 'POST', body: { assigned_to: worker, notes } });
+              await civicApi(`/staff/requests/${detail.id}/assign`, { token, method: 'POST', body: { assigned_to: worker, notes, note_visibility: noteVisibility } });
               setDetail(await civicApi<RequestDetail>(`/staff/requests/${detail.id}`, { token })); await load(); setNotes('');
             }, 'Assignment recorded')}>Save assignment</button></div>}
           {has('publish') && !field && <label className={styles.checkbox}><input type="checkbox" checked={detail.published} disabled={busy} onChange={event => {
@@ -228,7 +244,9 @@ export default function Workspace({ field = false }: { field?: boolean }) {
               setRevision(value => value + 1);
             }, 'Map visibility updated');
           }} /> Publish this request's coordinates and category on the public map</label>}
-          <h3>Audit trail</h3><ol className={styles.timeline}>{detail.history.map(event => <li key={event.id}><strong>{stateLabel(event.previous_status)} → {stateLabel(event.new_status)}</strong><small>{memberLabel(event.actor)} · {displayDate(event.created_at, session.portal.settings)}</small>{event.assigned_to && <small>Assigned: {memberLabel(event.assigned_to)}</small>}<p>{event.notes}</p></li>)}</ol>
+          {!showArchived && has('read') && <button disabled={busy} className={styles.secondary} onClick={() => void archive()}>Archive request</button>}
+          {showArchived && has('manage') && <button disabled={busy} className={styles.secondary} onClick={() => void archive(true)}>Restore request</button>}
+          <h3>Audit trail</h3><ol className={styles.timeline}>{detail.history.map(event => <li key={event.id}><strong>{stateLabel(event.previous_status)} → {stateLabel(event.new_status)}</strong><small>{memberLabel(event.actor)} · {displayDate(event.created_at, session.portal.settings)}</small>{event.assigned_to && <small>Assigned: {memberLabel(event.assigned_to)}</small>}{event.notes && <p>{event.notes}</p>}</li>)}</ol>
         </article>}
         {view === 'content' && has('publish') && <div className={styles.twoColumns}><section><h3>{editingContent ? 'Edit community information' : 'Publish community information'}</h3><form key={editingContent?.id || 'new'} className={styles.form} onSubmit={event => {
           event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);

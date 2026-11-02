@@ -44,12 +44,20 @@ CREATE TABLE IF NOT EXISTS civic.records (
   photo text,
   url text,
   assigned_to uuid,
+  archived_at timestamptz,
+  archived_by uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, id),
   FOREIGN KEY (tenant_id, assigned_to) REFERENCES civic.members(tenant_id, id),
+  FOREIGN KEY (tenant_id, archived_by) REFERENCES civic.members(tenant_id, id),
   CHECK ((longitude IS NULL) = (latitude IS NULL))
 );
+ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS archived_at timestamptz;
+ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS archived_by uuid;
+ALTER TABLE civic.records DROP CONSTRAINT IF EXISTS records_tenant_id_archived_by_fkey;
+ALTER TABLE civic.records ADD CONSTRAINT records_tenant_id_archived_by_fkey
+  FOREIGN KEY (tenant_id, archived_by) REFERENCES civic.members(tenant_id, id);
 CREATE TABLE IF NOT EXISTS civic.history (
   id uuid PRIMARY KEY,
   tenant_id uuid NOT NULL,
@@ -58,12 +66,19 @@ CREATE TABLE IF NOT EXISTS civic.history (
   previous_status text,
   new_status text NOT NULL,
   notes text NOT NULL DEFAULT '',
+  actor_role text,
+  note_visibility text NOT NULL DEFAULT 'role_only' CHECK (note_visibility IN ('role_only', 'down_chain')),
   assigned_to uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (tenant_id, request_id) REFERENCES civic.records(tenant_id, id),
   FOREIGN KEY (tenant_id, actor) REFERENCES civic.members(tenant_id, id),
   FOREIGN KEY (tenant_id, assigned_to) REFERENCES civic.members(tenant_id, id)
 );
+ALTER TABLE civic.history ADD COLUMN IF NOT EXISTS actor_role text;
+ALTER TABLE civic.history ADD COLUMN IF NOT EXISTS note_visibility text NOT NULL DEFAULT 'role_only';
+ALTER TABLE civic.history DROP CONSTRAINT IF EXISTS history_note_visibility_check;
+ALTER TABLE civic.history ADD CONSTRAINT history_note_visibility_check
+  CHECK (note_visibility IN ('role_only', 'down_chain'));
 CREATE TABLE IF NOT EXISTS civic.chat_channels (
   id uuid PRIMARY KEY,
   tenant_id uuid NOT NULL REFERENCES civic.portals(id),
@@ -101,6 +116,8 @@ CREATE TABLE IF NOT EXISTS civic.chat_messages (
   FOREIGN KEY (tenant_id, sender_id) REFERENCES civic.members(tenant_id, id)
 );
 CREATE INDEX IF NOT EXISTS records_tenant_kind ON civic.records(tenant_id, kind, created_at DESC);
+CREATE INDEX IF NOT EXISTS records_active_requests ON civic.records(tenant_id, status, created_at DESC)
+  WHERE kind = 'request' AND archived_at IS NULL;
 CREATE INDEX IF NOT EXISTS history_request ON civic.history(tenant_id, request_id, created_at);
 CREATE INDEX IF NOT EXISTS chat_messages_channel_cursor ON civic.chat_messages(tenant_id, channel_id, created_at, id);
 CREATE INDEX IF NOT EXISTS chat_messages_direct_cursor ON civic.chat_messages(tenant_id, direct_thread_id, created_at, id);

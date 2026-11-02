@@ -13,12 +13,12 @@ export type Session = { user: Member; permissions: string[]; portal: Portal };
 export type CivicRecord = {
   id: string; kind: string; title: string; description: string; location: string;
   category: string; status: string; reference: string; published: boolean;
-  assigned_to: string | null; longitude: number | null; latitude: number | null;
+  assigned_to: string | null; archived_at?: string | null; longitude: number | null; latitude: number | null;
   created_at: string; updated_at: string; url?: string | null;
 };
 export type History = {
   id: string; actor: string | null; previous_status: string | null; new_status: string;
-  notes: string; assigned_to: string | null; created_at: string;
+  notes: string; note_visibility: 'role_only' | 'down_chain' | null; assigned_to: string | null; created_at: string;
 };
 export type RequestDetail = CivicRecord & {
   contact: { name: string; email: string; phone: string } | null;
