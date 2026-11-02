@@ -277,10 +277,23 @@ export default function Workspace({ field = false }: { field?: boolean }) {
               event.currentTarget.value = '';
               void uploadFieldPhoto(file);
             }} /></label></section>}
-          <p>{detail.description}</p><p>{detail.location}</p><code>{detail.reference}</code>
-          {detail.contact && <p>Private contact: {detail.contact.name} · {detail.contact.email} {detail.contact.phone}</p>}
-          {detail.photos.map((photo, index) => <img key={photo} src={photo} alt={`Resident-submitted issue photo ${index + 1}`} />)}
-          {detail.field_photos.map((photo, index) => <img key={photo} src={photo} alt={`Field work photo ${index + 1}`} />)}
+          <div className={!field ? styles.staffTicketLayout : undefined}>
+            <div>
+              <p>{detail.description}</p><p>{detail.location}</p><code>{detail.reference}</code>
+              {detail.contact && <p>Private contact: {detail.contact.name} · {detail.contact.email} {detail.contact.phone}</p>}
+              {detail.photos.map((photo, index) => <img key={`${index}`} src={photo} alt={`Resident-submitted issue photo ${index + 1}`} />)}
+              {detail.field_photos.map((photo, index) => <img key={`${index}`} src={photo} alt={`Field work photo ${index + 1}`} />)}
+            </div>
+            {!field && <aside>
+              <h3>Request location</h3>
+              {detail.longitude !== null && detail.latitude !== null ?
+                <><p className={styles.hint}>Pinned coordinates: {detail.latitude}, {detail.longitude}</p>
+                  <MapEmbed portal={session.portal} token={token} revision={revision}
+                    center={[detail.longitude, detail.latitude]} marker={[detail.longitude, detail.latitude]} zoom={16}
+                    onSelect={id => void selectRequest(id)} /></> :
+                <p className={styles.hint}>A map location was not provided for this ticket.</p>}
+            </aside>}
+          </div>
           <h3>Work updates</h3><p className={styles.hint}>Notes and staff identities remain private. Residents see only the public status and update times.</p>
           <label>Private note<textarea rows={3} maxLength={5000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <label>Note visibility<select value={field ? 'down_chain' : noteVisibility} disabled={field} onChange={event => setNoteVisibility(event.target.value as 'role_only' | 'down_chain')}><option value="role_only">Only my role level</option><option value="down_chain">Share down the operational chain</option></select></label>
