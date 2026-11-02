@@ -523,9 +523,13 @@ secured("post", "/staff/requests/:id/field-photo", null, async (req, res, contex
 	const record = await requestFor(context, req.params.id, true);
 	const fieldPhoto = photo(req.body.photo);
 	if (!fieldPhoto) throw new CivicError(400, "Choose a field photo to upload");
-	await rows("UPDATE civic.records SET field_photo = :fieldPhoto, updated_at = now() WHERE id = :id RETURNING id",
-		{ id: record.id, fieldPhoto }, context.tx);
-	res.status(201).json({ uploaded: true });
+	const coordinatesProvided = req.body.longitude !== undefined || req.body.latitude !== undefined;
+	const point = coordinatesProvided ? coordinates(req.body.longitude, req.body.latitude) : {
+		longitude: record.longitude, latitude: record.latitude
+	};
+	await rows(`UPDATE civic.records SET field_photo = :fieldPhoto, longitude = :longitude, latitude = :latitude, updated_at = now()
+		WHERE id = :id RETURNING id`, { id: record.id, fieldPhoto, ...point }, context.tx);
+	res.status(201).json({ uploaded: true, ...point });
 }, rateLimit);
 secured("post", "/staff/requests/:id/archive", "read", async (req, res, context) => {
 	const record = await requestFor(context, req.params.id, true);

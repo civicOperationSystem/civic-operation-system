@@ -25,6 +25,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   const [status, setStatus] = useState('');
   const [notes, setNotes] = useState('');
   const [noteVisibility, setNoteVisibility] = useState<'role_only' | 'down_chain'>('role_only');
+  const [fieldPoint, setFieldPoint] = useState<[number, number] | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [worker, setWorker] = useState('');
@@ -139,6 +140,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     await action(async () => {
       const result = await civicApi<RequestDetail>(`/staff/requests/${id}`, { token });
       setDetail(result); setWorker(result.assigned_to || ''); setNotes('');
+      setFieldPoint(result.longitude !== null && result.latitude !== null ? [result.longitude, result.latitude] : null);
     }, '');
   }
   async function transition(next: string) {
@@ -168,8 +170,14 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     if (!detail || !file) return;
     await action(async () => {
       const photo = await readPhoto(file);
-      await civicApi(`/staff/requests/${detail.id}/field-photo`, { token, method: 'POST', body: { photo } });
-      setDetail(await civicApi<RequestDetail>(`/staff/requests/${detail.id}`, { token }));
+      await civicApi(`/staff/requests/${detail.id}/field-photo`, {
+        token, method: 'POST', body: {
+          photo, longitude: fieldPoint?.[0], latitude: fieldPoint?.[1],
+        },
+      });
+      const updated = await civicApi<RequestDetail>(`/staff/requests/${detail.id}`, { token });
+      setDetail(updated);
+      setFieldPoint(updated.longitude !== null && updated.latitude !== null ? [updated.longitude, updated.latitude] : null);
       await load();
     }, 'Field photo uploaded.');
   }
@@ -264,11 +272,14 @@ export default function Workspace({ field = false }: { field?: boolean }) {
           {detail.contact && <p>Private contact: {detail.contact.name} · {detail.contact.email} {detail.contact.phone}</p>}
           {detail.photo && <img src={detail.photo} alt="Resident-submitted issue photo" />}
           {detail.field_photo && <img src={detail.field_photo} alt="Field work photo" />}
-          {field && <label>Field work photo<input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={event => {
-            const file = event.currentTarget.files?.[0] || null;
-            event.currentTarget.value = '';
-            void uploadFieldPhoto(file);
-          }} /></label>}
+          {field && <section className={styles.fieldEvidence}><h3>Fix evidence and map location</h3><p className={styles.hint}>Click the map to pin where the work was completed, then upload the fix photo. Both are saved to this ticket.</p>
+            <MapEmbed portal={session.portal} token={token} revision={revision} onPoint={setFieldPoint} />
+            <div className={styles.inline}><label>Longitude<input readOnly value={fieldPoint?.[0] ?? ''} placeholder="Click the map" /></label><label>Latitude<input readOnly value={fieldPoint?.[1] ?? ''} placeholder="Click the map" /></label></div>
+            <label>Field work photo<input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={event => {
+              const file = event.currentTarget.files?.[0] || null;
+              event.currentTarget.value = '';
+              void uploadFieldPhoto(file);
+            }} /></label></section>}
           <h3>Work updates</h3><p className={styles.hint}>Notes and staff identities remain private. Residents see only the public status and update times.</p>
           <label>Private note<textarea rows={3} maxLength={5000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <label>Note visibility<select value={field ? 'down_chain' : noteVisibility} disabled={field} onChange={event => setNoteVisibility(event.target.value as 'role_only' | 'down_chain')}><option value="role_only">Only my role level</option><option value="down_chain">Share down the operational chain</option></select></label>
