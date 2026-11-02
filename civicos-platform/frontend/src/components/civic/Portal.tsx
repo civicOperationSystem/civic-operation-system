@@ -171,7 +171,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             <div className={styles.inline}>{settings?.services.map(service => <span className={styles.tag} key={service}>{service}</span>)}</div></section>
         </>}
         {view === 'map' && <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>EXPLORE YOUR COMMUNITY</p><h2>Places, infrastructure & public work</h2></div></div>
-          <p className={styles.hint}>Only information explicitly approved for public display appears on this map. Select a request marker or ticket to view its public details.</p><MapEmbed portal={portal} onSelect={id => void selectPublicRequest(id)} />
+          <p className={styles.hint}>Reviewed requests and published community information appear on this map. Select a request marker or ticket to view its public details.</p><MapEmbed portal={portal} onSelect={id => void selectPublicRequest(id)} />
           <section className={styles.publicTickets}><h3>Public request tickets</h3>{!calendarRequests.length ? <p className={styles.hint}>There are no public request tickets yet.</p> :
             <div className={styles.cards}>{calendarRequests.map(record => <button key={record.id} className={styles.card} onClick={() => void selectPublicRequest(record.id)}><span className={styles.tag}>{record.status}</span><strong>{record.title}</strong><small>{record.category || 'Community request'}</small><span>View public ticket details</span></button>)}</div>}
           </section></>}
@@ -203,7 +203,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             {settings?.anonymous && <label className={styles.checkbox}><input type="checkbox" checked={anonymous} onChange={event => setAnonymous(event.target.checked)} /> Report anonymously</label>}
             {!anonymous && <><label>Your name<input name="name" required maxLength={100} autoComplete="name" /></label><label>Email<input name="email" type="email" required maxLength={254} autoComplete="email" /></label><label>Phone (optional)<input name="phone" maxLength={50} type="tel" autoComplete="tel" /></label></>}
             <button disabled={busy} className={styles.primary}>{busy ? 'Submitting…' : 'Submit request'}</button>
-          </form></section><aside><h3>Pin the location</h3><p className={styles.hint}>Click on the map to add coordinates. Contact details and photos are never published.</p><MapEmbed portal={portal} onPoint={setPoint} /></aside></div>}
+          </form></section><aside><h3>Pin the location</h3><p className={styles.hint}>Click on the map to add coordinates. Contact details are never published; photos require staff publication.</p><MapEmbed portal={portal} onPoint={setPoint} /></aside></div>}
       </div>
       {publicRequestDetail && <div className={styles.modalBackdrop} role="presentation">
         <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="public-ticket-title">
@@ -211,8 +211,8 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
           <div className={styles.ticketModalLayout}><div><p>{publicRequestDetail.category || 'Community request'}</p>{publicRequestDetail.description && <p>{publicRequestDetail.description}</p>}<p>Reported {displayDate(publicRequestDetail.created_at, portal.settings)}</p>{publicRequestDetail.completed_at && <p>Completed {displayDate(publicRequestDetail.completed_at, portal.settings)}</p>}<p>Updated {displayDate(publicRequestDetail.updated_at, portal.settings)}</p>
             {publicRequestDetail.photos.map((photo, index) => <img key={photo} className={styles.ticketPhoto} src={photo} alt={`Ticket photo ${index + 1} for ${publicRequestDetail.title}`} />)}
             <h3>Public status updates</h3><ol className={styles.timeline}>{publicRequestDetail.history.map((event, index) => <li key={index}><strong>{event.status}</strong><small>{displayDate(event.timestamp, portal.settings)}</small></li>)}</ol></div>
-            <aside><h3>Public location</h3><p>{publicRequestDetail.location || 'Location details are available after staff publishes the completed ticket.'}</p>{publicRequestDetail.longitude !== null && publicRequestDetail.latitude !== null ?
-              <MapEmbed portal={portal} center={[publicRequestDetail.longitude, publicRequestDetail.latitude]} zoom={16} onSelect={id => void selectPublicRequest(id)} /> :
+            <aside><h3>Public location</h3><p>{publicRequestDetail.location || 'No location description was provided.'}</p>{publicRequestDetail.longitude !== null && publicRequestDetail.latitude !== null ?
+              <><p className={styles.hint}>Pinned coordinates: {publicRequestDetail.latitude}, {publicRequestDetail.longitude}</p><MapEmbed portal={portal} center={[publicRequestDetail.longitude, publicRequestDetail.latitude]} marker={[publicRequestDetail.longitude, publicRequestDetail.latitude]} zoom={16} onSelect={id => void selectPublicRequest(id)} /></> :
               <p className={styles.hint}>A map location was not provided for this ticket.</p>}</aside></div>
         </section>
       </div>}

@@ -6,6 +6,11 @@ test('map context rejects tokens in URLs and malformed coordinates or messages',
   const valid = { type: 'civic-map-context', slug: 'town-a', center: [-73, 40], token: null, selectable: false };
   assert.equal(isMapContext(valid), true);
   assert.equal(isMapContext({ ...valid, center: [181, 0] }), false);
+  assert.equal(isMapContext({ ...valid, marker: [-73, 40] }), true);
+  assert.equal(isMapContext({ ...valid, marker: null }), true);
+  assert.equal(isMapContext({ ...valid, marker: [0, 91] }), false);
+  assert.equal(isMapContext({ ...valid, marker: [0, NaN] }), false);
+  assert.equal(isMapContext({ ...valid, marker: [0] }), false);
   assert.equal(isMapContext({ ...valid, token: 123 }), false);
   assert.equal(isMapContext({ ...valid, slug: '../staff' }), false);
   assert.equal(isMapContext(null), false);

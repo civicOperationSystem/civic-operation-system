@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { Portal } from '@/lib/civic';
 import styles from './civic.module.css';
 
-export default function MapEmbed({ portal, token, revision = 0, center, zoom, onPoint, onSelect }: {
-  portal: Portal; token?: string; revision?: number; center?: [number, number]; zoom?: number;
+export default function MapEmbed({ portal, token, revision = 0, center, zoom, marker, onPoint, onSelect }: {
+  portal: Portal; token?: string; revision?: number; center?: [number, number]; zoom?: number; marker?: [number, number];
   onPoint?: (point: [number, number]) => void; onSelect?: (id: string) => void;
 }) {
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -35,9 +35,9 @@ export default function MapEmbed({ portal, token, revision = 0, center, zoom, on
     if (!ready) return;
     iframe.current?.contentWindow?.postMessage({
       type: 'civic-map-context', slug: portal.slug, center: center || portal.settings.center, zoom: zoom || null,
-      token: token || null, selectable, revision,
+      token: token || null, selectable, revision, marker: marker || null,
     }, new URL(mapUrl, window.location.origin).origin);
-  }, [mapUrl, portal, token, ready, revision, selectable, center, zoom]);
+  }, [mapUrl, portal, token, ready, revision, selectable, center, zoom, marker]);
   return <div className={styles.mapFrame}>
     {error && <p role="alert" className={styles.error}>{error}</p>}
     <iframe ref={iframe} src={mapUrl} title="Interactive CivicOS community map" allow="geolocation"

@@ -116,7 +116,7 @@
 .adminList li { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .adminList small { display:block; margin-top:3px; color:#69808a; font-size:10px; overflow-wrap:anywhere; }
 .modalBackdrop { position:fixed; z-index:20; inset:0; display:grid; place-items:center; padding:20px; background:#142a32a8; }
-.modal { width:70vw; max-width:1100px; max-height:calc(100vh - 40px); overflow:auto; padding:26px; border-radius:14px; background:#fff; box-shadow:0 24px 70px #10242b66; }
+.modal { width:80vw; max-width:1100px; max-height:calc(100vh - 40px); overflow:auto; padding:26px; border-radius:14px; background:#fff; box-shadow:0 24px 70px #10242b66; }
 .ticketModalLayout { display:grid; grid-template-columns:minmax(240px,.75fr) minmax(460px,1.45fr); gap:22px; }
 .ticketModalLayout .mapFrame { height:540px; }
 .ticketPhoto { width:100%; max-height:280px; object-fit:cover; border-radius:9px; }

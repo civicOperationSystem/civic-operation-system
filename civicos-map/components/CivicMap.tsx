@@ -161,6 +161,19 @@ export default function CivicMap() {
     (map.getSource('civic') as GeoJSONSource).setData(filtered);
   }, [map, filtered]);
   useEffect(() => { if (map && context) map.flyTo({ center: context.center, zoom: context.zoom || 12 }); }, [map, context?.slug, context?.center[0], context?.center[1], context?.zoom]);
+  useEffect(() => {
+    if (!map || !context?.marker) return;
+    let active = true;
+    let marker: MapMarker | undefined;
+    const point = context.marker;
+    void import('maplibre-gl').then(({ Marker }) => {
+      if (active) marker = new Marker({ color: '#e04b34' }).setLngLat(point).addTo(map);
+    }).catch(failure => {
+      console.error('CivicOS location pin could not be displayed', failure);
+      if (active) setMapError('The selected location pin could not be displayed.');
+    });
+    return () => { active = false; marker?.remove(); };
+  }, [map, context?.slug, context?.marker?.[0], context?.marker?.[1]]);
   const statuses = [...new Set(data.features.map(feature => feature.properties.status).filter((item): item is string => !!item))];
   function fitLocations() {
     if (!map || !filtered.features.length) return;

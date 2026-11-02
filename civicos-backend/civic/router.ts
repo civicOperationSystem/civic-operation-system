@@ -241,9 +241,9 @@ civicRouter.get("/public/:slug/requests/:id", endpoint(async (req, res) => {
 			category: record.category,
 			status: publicStatus(record.status, portal.settings.states),
 			description: record.published ? record.description : "",
-			location: record.published ? record.location : "",
-			longitude: record.published ? record.longitude : null,
-			latitude: record.published ? record.latitude : null,
+			location: record.location,
+			longitude: record.longitude,
+			latitude: record.latitude,
 			photos: record.published ? [...record.photos, ...record.field_photos] : [],
 			created_at: record.created_at,
 			updated_at: record.updated_at,
@@ -836,7 +836,8 @@ civicRouter.get("/public/:slug/map", endpoint(async (req, res) => {
 	const portal = await portalBySlug(req.params.slug);
 	const records = await tenantTransaction(portal.id, tx => rows<RecordRow>(
 		`SELECT id, kind, title, status, location, longitude, latitude FROM civic.records
-		 WHERE published AND longitude IS NOT NULL ORDER BY created_at DESC, id LIMIT 5001`, {}, tx));
+		 WHERE longitude IS NOT NULL AND (published OR (kind = 'request' AND status <> 'submitted' AND archived_at IS NULL))
+		 ORDER BY created_at DESC, id LIMIT 5001`, {}, tx));
 	res.json(geojson(records, portal.settings.states));
 }));
 secured("get", "/staff/map", null, async (_req, res, context) => {
