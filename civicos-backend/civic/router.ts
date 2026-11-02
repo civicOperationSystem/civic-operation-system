@@ -191,6 +191,20 @@ civicRouter.get("/public/:slug/content", endpoint(async (req, res) => {
 		rows(`SELECT ${publicColumns} FROM civic.records WHERE published AND kind <> 'request' ORDER BY created_at DESC LIMIT 500`, {}, tx));
 	res.json(records);
 }));
+civicRouter.get("/public/:slug/requests/calendar", endpoint(async (req, res) => {
+	const portal = await portalBySlug(req.params.slug);
+	const records = await tenantTransaction(portal.id, tx =>
+		rows<Pick<RecordRow, "id" | "title" | "category" | "status" | "created_at">>(
+			"SELECT id, title, category, status, created_at FROM civic.records WHERE kind = 'request' AND published AND archived_at IS NULL ORDER BY created_at DESC LIMIT 500",
+			{}, tx));
+	res.json(records.map(record => ({
+		id: record.id,
+		title: record.title,
+		category: record.category,
+		status: publicStatus(record.status, portal.settings.states),
+		created_at: record.created_at
+	})));
+}));
 civicRouter.post("/public/:slug/requests", rateLimit, endpoint(async (req, res) => {
 	const portal = await portalBySlug(req.params.slug);
 	const category = text(req.body.category, "category", 100);
@@ -292,7 +306,13 @@ civicRouter.get("/platform/organizations", endpoint(async (req, res) => {
 	const organizations = await rows<Pick<Portal, "id" | "slug" | "name" | "domain" | "archived_at">>(
 		"SELECT id, slug, name, domain, archived_at FROM civic.portals ORDER BY archived_at NULLS FIRST, name, slug");
 	res.setHeader("Cache-Control", "no-store");
-	res.json(organizations);
+	res.json(await Promise.all(organizations.map(async organization => ({
+		...organization,
+		admins: await tenantTransaction(organization.id, tx => rows(
+			"SELECT id, email, display_name, active FROM civic.members WHERE role = 'admin' ORDER BY lower(display_name), email",
+			{}, tx
+		), undefined, true)
+	}))));
 }));
 civicRouter.post("/platform/organizations", rateLimit, endpoint(async (req, res) => {
 	platformAccessToken(req);
@@ -318,7 +338,25 @@ civicRouter.post("/platform/organizations", rateLimit, endpoint(async (req, res)
 		await rows("INSERT INTO civic.chat_channels(id, tenant_id, name, description) VALUES (:channel, :id, 'general', 'Organization-wide staff chat')",
 			{ channel: randomUUID(), id }, tx);
 	}, undefined, true);
-	res.status(201).json({ organization: { id, slug, name, domain, admin_email: email } });
+	res.status(201).json({ organization: {
+		id, slug, name, domain, archived_at: null, admin_email: email,
+		admins: [{ id: adminId, email, display_name: email.split("@")[0], active: true }]
+	} });
+}));
+civicRouter.put("/platform/organizations/:organizationId/admins/:memberId/access", endpoint(async (req, res) => {
+	platformAccessToken(req);
+	const organizationId = identifier(req.params.organizationId);
+	const memberId = identifier(req.params.memberId);
+	if (typeof req.body.active !== "boolean") throw new CivicError(400, "Invalid account status");
+	const [member] = await tenantTransaction(organizationId, async tx => {
+		const [existing] = await rows<Member>("SELECT * FROM civic.members WHERE id = :memberId AND role = 'admin' FOR UPDATE",
+			{ memberId }, tx);
+		if (!existing) throw new CivicError(404, "Organization administrator not found");
+		return rows("UPDATE civic.members SET active = :active WHERE id = :memberId RETURNING id, email, display_name, active",
+			{ memberId, active: req.body.active }, tx);
+	}, undefined, true);
+	if (!member) throw new CivicError(404, "Organization administrator not found");
+	res.json(member);
 }));
 civicRouter.put("/platform/organizations/:id/archive", endpoint(async (req, res) => {
 	platformAccessToken(req);

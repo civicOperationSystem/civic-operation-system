@@ -7,7 +7,8 @@ import { civicApi } from '@/lib/civic';
 import { getCivicSupabase, isCivicSupabaseConfigured } from '@/lib/supabase';
 import styles from './civic.module.css';
 
-type Organization = { id: string; slug: string; name: string; domain: string | null; archived_at: string | null };
+type Administrator = { id: string; email: string; display_name: string; active: boolean };
+type Organization = { id: string; slug: string; name: string; domain: string | null; archived_at: string | null; admins: Administrator[] };
 
 export default function PlatformAdmin() {
   const [token, setToken] = useState('');
@@ -163,6 +164,27 @@ export default function PlatformAdmin() {
     }
   }
 
+  async function setAdministratorAccess(organization: Organization, administrator: Administrator, active: boolean) {
+    const action = active ? 'reactivate' : 'deactivate';
+    if (!window.confirm(`${active ? 'Reactivate' : 'Deactivate'} ${administrator.display_name}?`)) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await civicApi<Administrator>(`/platform/organizations/${organization.id}/admins/${administrator.id}/access`, {
+        token, method: 'PUT', body: { active },
+      });
+      setOrganizations(current => current.map(item => item.id === organization.id ? {
+        ...item, admins: item.admins.map(member => member.id === updated.id ? updated : member),
+      } : item));
+      setNotice(`${administrator.display_name}'s access was ${action}d.`);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : `Could not ${action} administrator`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <main className={styles.shell}>
     <header className={styles.header}>
       <Link className={styles.brand} href="/">C<span>O</span> <strong>CivicOS</strong></Link>
@@ -202,6 +224,13 @@ export default function PlatformAdmin() {
               <span className={styles.tag}>{organization.archived_at ? 'Archived' : organization.slug}</span>
               <h3>{organization.name}</h3>
               {organization.domain && <p>{organization.domain}</p>}
+              <p className={styles.hint}>Bottom administrators</p>
+              <ul className={styles.adminList}>{organization.admins.map(administrator => <li key={administrator.id}>
+                <span><strong>{administrator.display_name}</strong><small>{administrator.email} · {administrator.active ? 'Active' : 'Deactivated'}</small></span>
+                <button className={styles.secondary} disabled={busy} onClick={() => void setAdministratorAccess(organization, administrator, !administrator.active)}>
+                  {administrator.active ? 'Deactivate' : 'Reactivate'}
+                </button>
+              </li>)}</ul>
               {!organization.archived_at && <><Link href={`/staff?org=${encodeURIComponent(organization.slug)}`}>Open staff sign-in</Link>
               <Link href={`/portal/${encodeURIComponent(organization.slug)}`}>Open public portal</Link></>}
               <div className={styles.inline}>

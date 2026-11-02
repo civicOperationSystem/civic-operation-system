@@ -6,6 +6,7 @@ import MapEmbed from './MapEmbed';
 import styles from './civic.module.css';
 
 const kinds = ['all', 'service', 'announcement', 'event', 'project', 'facility', 'document', 'emergency', 'infrastructure'];
+type PublicCalendarRequest = { id: string; title: string; category: string | null; status: string; created_at: string };
 export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [slug, setSlug] = useState(initialSlug);
   const [organizations, setOrganizations] = useState<{ name: string; slug: string }[]>([]);
@@ -15,7 +16,9 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [organizationQuery, setOrganizationQuery] = useState('');
   const [portal, setPortal] = useState<PortalData | null>(null);
   const [content, setContent] = useState<CivicRecord[]>([]);
+  const [calendarRequests, setCalendarRequests] = useState<PublicCalendarRequest[]>([]);
   const [view, setView] = useState('overview');
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [kind, setKind] = useState('all');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,8 +32,11 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
     try {
       const org = nextSlug ? await civicApi<PortalData>(`/public/${encodeURIComponent(nextSlug)}`) :
         await civicApi<PortalData>(`/public/portal?domain=${encodeURIComponent(window.location.hostname)}`);
-      const records = await civicApi<CivicRecord[]>(`/public/${org.slug}/content`);
-      setPortal(org); setSlug(org.slug); setContent(records); setAnonymous(org.settings.anonymous);
+      const [records, requests] = await Promise.all([
+        civicApi<CivicRecord[]>(`/public/${org.slug}/content`),
+        civicApi<PublicCalendarRequest[]>(`/public/${org.slug}/requests/calendar`),
+      ]);
+      setPortal(org); setSlug(org.slug); setContent(records); setCalendarRequests(requests); setAnonymous(org.settings.anonymous);
       setSubmitted(''); setTracked(null); setPoint(null);
       document.documentElement.lang = org.settings.language;
       document.title = `${org.name} | CivicOS`;
@@ -126,7 +132,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         <aside className={styles.heroAside}><span className={styles.pulse} /> Open, local, accountable<p>One platform for residents,<br />staff, and field teams.</p><strong>{settings?.departments.length} departments · {settings?.services.length} services</strong></aside>
       </section>
       <nav className={styles.tabs} aria-label="Portal sections">
-        {['overview', 'map', 'report', 'track'].map(tab => <button key={tab} aria-current={view === tab ? 'page' : undefined} onClick={() => { setView(tab); setError(''); }}>{({ overview: 'Community hub', map: 'Explore the map', report: 'Report a problem', track: 'Track a request' })[tab]}</button>)}
+        {['overview', 'map', 'calendar', 'report', 'track'].map(tab => <button key={tab} aria-current={view === tab ? 'page' : undefined} onClick={() => { setView(tab); setError(''); }}>{({ overview: 'Community hub', map: 'Explore the map', calendar: 'Public requests', report: 'Report a problem', track: 'Track a request' })[tab]}</button>)}
       </nav>
       <div className={styles.body}>
         {error && <p role="alert" className={styles.error}>{error}</p>}
@@ -145,6 +151,22 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         </>}
         {view === 'map' && <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>EXPLORE YOUR COMMUNITY</p><h2>Places, infrastructure & public work</h2></div></div>
           <p className={styles.hint}>Only information explicitly approved for public display appears on this map.</p><MapEmbed portal={portal} /></>}
+        {view === 'calendar' && (() => {
+          const monthStart = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+          const gridStart = new Date(monthStart);
+          gridStart.setDate(1 - ((monthStart.getDay() + 6) % 7));
+          const days = Array.from({ length: 42 }, (_, index) => {
+            const date = new Date(gridStart);
+            date.setDate(gridStart.getDate() + index);
+            return date;
+          });
+          const dateKey = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: portal.settings.timezone }).format(date);
+          return <section><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>PUBLIC WORK IN PROGRESS</p><h2>Public request calendar</h2></div></div>
+            <p className={styles.hint}>Only requests explicitly approved for public display appear here.</p>
+            <div className={styles.inline}><button className={styles.secondary} onClick={() => setCalendarMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>Previous month</button><strong>{new Intl.DateTimeFormat(portal.settings.language, { month: 'long', year: 'numeric' }).format(calendarMonth)}</strong><button className={styles.secondary} onClick={() => setCalendarMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>Next month</button></div>
+            <div className={styles.calendar} role="grid" aria-label="Public request calendar">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <strong key={day}>{day}</strong>)}{days.map(date => <section key={date.toISOString()} className={date.getMonth() === calendarMonth.getMonth() ? styles.calendarDay : `${styles.calendarDay} ${styles.calendarMuted}`}><time dateTime={date.toISOString().slice(0, 10)}>{date.getDate()}</time>{calendarRequests.filter(record => dateKey(new Date(record.created_at)) === dateKey(date)).map(record => <article key={record.id}><strong>{record.title}</strong><small>{record.status}{record.category ? ` · ${record.category}` : ''}</small></article>)}</section>)}</div>
+          </section>;
+        })()}
         {view === 'report' && <div className={styles.twoColumns}><section><p className={styles.eyebrow}>LET'S MAKE IT BETTER</p><h2>Report a community problem</h2><p className={styles.hint}>For immediate danger, contact local emergency services. This form is not monitored as an emergency line.</p>
           {submitted && <div role="status" className={styles.success}><strong>Request received.</strong><p>Save this private tracking reference. Anyone with it can check the public status.</p><code>{submitted}</code><button className={styles.secondary} onClick={() => setView('track')}>Track this request</button></div>}
           <form onSubmit={report} className={styles.form}>
