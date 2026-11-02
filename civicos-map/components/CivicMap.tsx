@@ -117,7 +117,7 @@ export default function CivicMap() {
           if (properties?.kind === 'request') send({ type: 'civic-map-select', id: properties.id });
         });
         current.on('click', event => {
-          if (!current) return;
+          if (!current || contextRef.current?.focused) return;
           const point: [number, number] = [Number(event.lngLat.wrap().lng.toFixed(6)), Number(event.lngLat.lat.toFixed(6))];
           setSelectedPoint(point);
           pin.current?.remove();
@@ -140,6 +140,7 @@ export default function CivicMap() {
   }, []);
   useEffect(() => {
     if (!context) return;
+    if (context.focused) { setData(empty); setLoading(false); setError(''); return; }
     const abort = new AbortController();
     setLoading(true); setError(''); setData(empty);
     const path = context.token ? '/staff/map' : `/public/${encodeURIComponent(context.slug)}/map`;
@@ -184,9 +185,9 @@ export default function CivicMap() {
     ], { padding: 70, maxZoom: 16 });
   }
   return <main className={styles.shell}>
-    <header className={styles.header}><strong>CivicOS <span>Community map</span></strong><span className={styles.badge}>{context?.token ? 'Permission-aware workspace' : 'Public information only'}</span></header>
-    <div className={styles.layout}>
-      <aside className={styles.sidebar}>
+    {!context?.focused && <header className={styles.header}><strong>CivicOS <span>Community map</span></strong><span className={styles.badge}>{context?.token ? 'Permission-aware workspace' : 'Public information only'}</span></header>}
+    <div className={context?.focused ? `${styles.layout} ${styles.focusedLayout}` : styles.layout}>
+      {!context?.focused && <aside className={styles.sidebar}>
         {!context && <form onSubmit={event => { event.preventDefault(); setContext({ slug, token: null, center: [-73.98, 40.75], selectable: false }); }}><label>Organization<input required value={slug} onChange={event => setSlug(event.target.value)} pattern="[a-z0-9-]{3,60}" /></label><button>Open map</button></form>}
         <label>Search locations<input value={search} onChange={event => setSearch(event.target.value)} placeholder="Facility, infrastructure, request…" /></label>
         <label>Layer<select value={kind} onChange={event => setKind(event.target.value)}>{['all', 'request', 'facility', 'infrastructure', 'service', 'project', 'event', 'emergency'].map(item => <option key={item} value={item}>{item === 'all' ? 'All authorized layers' : item}</option>)}</select></label>
@@ -201,8 +202,8 @@ export default function CivicMap() {
         <ul className={styles.locations}>{filtered.features.slice(0, 200).map(feature => <li key={feature.id}><button onClick={() => select(feature)}><span className={styles.kind}>{feature.properties.kind}</span><strong>{feature.properties.title}</strong><small>{feature.properties.status || feature.properties.location || 'Community location'}</small></button></li>)}</ul>
         {!loading && !error && context && !filtered.features.length && <p className={styles.hint}>No authorized locations match these filters. Unpublished requests are not shown publicly.</p>}
         {filtered.features.length > 200 && <p className={styles.hint}>Showing the first 200 in the list. All returned locations remain visible on the map. Narrow your filters to find more.</p>}
-      </aside>
-      <section className={styles.mapArea} aria-busy={!map}><div ref={container} className={styles.map} /><div className={styles.legend}><span>● Requests</span><span>● Facilities</span><span>● Infrastructure</span></div></section>
+      </aside>}
+      <section className={styles.mapArea} aria-busy={!map}><div ref={container} className={styles.map} />{context?.focused ? mapError && <p className={`${styles.error} ${styles.mapError}`} role="alert">{mapError}</p> : <div className={styles.legend}><span>● Requests</span><span>● Facilities</span><span>● Infrastructure</span></div>}</section>
     </div>
   </main>;
 }

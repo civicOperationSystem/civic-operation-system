@@ -197,11 +197,17 @@ test('resident → staff → mobile field → verification → private-safe trac
   await expect(page.getByText('Private dispatch note — never public')).toHaveCount(0);
   await expect(page.getByText('admin@example.org')).toHaveCount(0);
   await page.getByRole('button', { name: 'Explore the map' }).click();
-  const map = page.frameLocator('iframe[title="Interactive CivicOS community map"]');
+  const map = page.frameLocator('iframe[title="Interactive CivicOS community map"]').first();
   await expect(map.getByText('1 authorized locations', { exact: true })).toBeVisible();
   await expect(map.getByRole('button', { name: /Pothole/ })).toBeVisible();
   await expect(page.getByText(/Map is taking too long/)).toHaveCount(0);
   await expect(map.locator('.maplibregl-canvas')).toBeVisible();
+  await map.getByRole('button', { name: /Pothole/ }).click();
+  const ticketMap = page.getByRole('dialog').frameLocator('iframe[title="Interactive CivicOS community map"]');
+  await expect(ticketMap.locator('section[aria-busy="false"]')).toBeVisible({ timeout: 30000 });
+  await expect(ticketMap.locator('.maplibregl-marker')).toBeVisible();
+  await expect(ticketMap.getByLabel('Search locations')).toHaveCount(0);
+  await expect(map.getByLabel('Search locations')).toBeVisible();
 });
 
 test('platform owner creates an organization and appoints its bottom admin', async ({ page }) => {

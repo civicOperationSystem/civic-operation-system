@@ -213,7 +213,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             {publicRequestDetail.photos.map((photo, index) => <img key={index} className={styles.ticketPhoto} src={photo} alt={`Ticket photo ${index + 1} for ${publicRequestDetail.title}`} />)}
             <h3>Public status updates</h3><ol className={styles.timeline}>{publicRequestDetail.history.map((event, index) => <li key={index}><strong>{event.status}</strong><small>{displayDate(event.timestamp, portal.settings)}</small></li>)}</ol></div>
             <aside><h3>Public location</h3><p>{publicRequestDetail.location || 'No location description was provided.'}</p>{publicRequestDetail.longitude !== null && publicRequestDetail.latitude !== null ?
-              <><p className={styles.hint}>Pinned coordinates: {publicRequestDetail.latitude}, {publicRequestDetail.longitude}</p><MapEmbed portal={portal} center={[publicRequestDetail.longitude, publicRequestDetail.latitude]} marker={[publicRequestDetail.longitude, publicRequestDetail.latitude]} zoom={16} onSelect={id => void selectPublicRequest(id)} /></> :
+              <><p className={styles.hint}>Pinned coordinates: {publicRequestDetail.latitude}, {publicRequestDetail.longitude}</p><MapEmbed portal={portal} center={[publicRequestDetail.longitude, publicRequestDetail.latitude]} marker={[publicRequestDetail.longitude, publicRequestDetail.latitude]} zoom={16} focused /></> :
               <p className={styles.hint}>A map location was not provided for this ticket.</p>}</aside></div>
         </section>
       </div>}

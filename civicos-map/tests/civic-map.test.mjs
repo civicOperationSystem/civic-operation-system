@@ -11,6 +11,10 @@ test('map context rejects tokens in URLs and malformed coordinates or messages',
   assert.equal(isMapContext({ ...valid, marker: [0, 91] }), false);
   assert.equal(isMapContext({ ...valid, marker: [0, NaN] }), false);
   assert.equal(isMapContext({ ...valid, marker: [0] }), false);
+  assert.equal(isMapContext({ ...valid, marker: [-73, 40], focused: true }), true);
+  assert.equal(isMapContext({ ...valid, focused: true }), false);
+  assert.equal(isMapContext({ ...valid, marker: [-73, 40], focused: true, selectable: true }), false);
+  assert.equal(isMapContext({ ...valid, focused: 'true' }), false);
   assert.equal(isMapContext({ ...valid, token: 123 }), false);
   assert.equal(isMapContext({ ...valid, slug: '../staff' }), false);
   assert.equal(isMapContext(null), false);
