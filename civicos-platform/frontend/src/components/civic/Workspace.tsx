@@ -199,15 +199,15 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       {error && <p role="alert" className={styles.error}>{error}</p>}
     </section> : <div className={styles.workspace}>
       <aside className={styles.sidebar}><h3>{session.portal.name}</h3><p>{session.user.email}<br />{session.user.role} · {field ? 'Field workspace' : 'Operations'}</p>
-        {(field ? ['requests', 'calendar', 'map'] : [
+        {(field ? ['requests', 'calendar', 'map', ...(has('chat') ? ['chat'] : [])] : [
           ...(has('read') || has('field') ? ['requests', 'calendar', 'map'] : []),
           ...(has('chat') ? ['chat'] : []), ...(has('publish') ? ['content'] : []), ...(has('manage') ? ['members', 'settings'] : []),
         ]).map(tab => <button key={tab} aria-current={tab === view ? 'page' : undefined} onClick={() => { setView(tab); setDetail(null); setError(''); setNotice(''); }}>
-          {({ requests: field ? 'My assignments' : 'Service requests', calendar: 'Request calendar', map: 'Community map', chat: 'Staff chat', content: 'Public information', members: 'People & roles', settings: 'Organization settings' })[tab]}
+          {({ requests: field ? 'My assignments' : 'Service requests', calendar: 'Request calendar', map: 'Community map', chat: field ? 'Field team chat' : 'Staff chat', content: 'Public information', members: 'People & roles', settings: 'Organization settings' })[tab]}
         </button>)}
       </aside>
       <section className={styles.main}>
-        {view === 'chat' && !field && has('chat') ? <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>TEAM COMMUNICATION</p><h2>Staff chat</h2></div></div><ChatPanel token={token} session={session} /></> : <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>{field ? 'OUT IN THE COMMUNITY' : 'OPERATIONS OVERVIEW'}</p><h2>{({ requests: field ? 'Your work, in one place' : 'Service requests', calendar: 'Request calendar', map: 'Operational map', content: 'Public information', members: 'People & access', settings: 'Organization settings' })[view]}</h2></div>
+        {view === 'chat' && has('chat') ? <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>TEAM COMMUNICATION</p><h2>{field ? 'Field team chat' : 'Staff chat'}</h2></div></div><ChatPanel token={token} session={session} /></> : <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>{field ? 'OUT IN THE COMMUNITY' : 'OPERATIONS OVERVIEW'}</p><h2>{({ requests: field ? 'Your work, in one place' : 'Service requests', calendar: 'Request calendar', map: 'Operational map', content: 'Public information', members: 'People & access', settings: 'Organization settings' })[view]}</h2></div>
           <button disabled={busy} className={styles.secondary} onClick={() => void action(() => load(), 'Workspace refreshed')}>Refresh</button></div>
         {error && <p role="alert" className={styles.error}>{error}</p>}
         {notice && <p role="status" className={styles.success}>{notice}</p>}
