@@ -26,6 +26,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   const [notes, setNotes] = useState('');
   const [noteVisibility, setNoteVisibility] = useState<'role_only' | 'down_chain'>('role_only');
   const [fieldPoint, setFieldPoint] = useState<[number, number] | null>(null);
+  const [editingFieldLocation, setEditingFieldLocation] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [worker, setWorker] = useState('');
@@ -140,7 +141,8 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     await action(async () => {
       const result = await civicApi<RequestDetail>(`/staff/requests/${id}`, { token });
       setDetail(result); setWorker(result.assigned_to || ''); setNotes('');
-      setFieldPoint(result.longitude !== null && result.latitude !== null ? [result.longitude, result.latitude] : null);
+      const location = result.longitude !== null && result.latitude !== null ? [result.longitude, result.latitude] as [number, number] : null;
+      setFieldPoint(location); setEditingFieldLocation(!location);
     }, '');
   }
   async function transition(next: string) {
@@ -177,7 +179,8 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       });
       const updated = await civicApi<RequestDetail>(`/staff/requests/${detail.id}`, { token });
       setDetail(updated);
-      setFieldPoint(updated.longitude !== null && updated.latitude !== null ? [updated.longitude, updated.latitude] : null);
+      const location = updated.longitude !== null && updated.latitude !== null ? [updated.longitude, updated.latitude] as [number, number] : null;
+      setFieldPoint(location); setEditingFieldLocation(!location);
       await load();
     }, 'Field photo uploaded.');
   }
@@ -270,7 +273,10 @@ export default function Workspace({ field = false }: { field?: boolean }) {
         {detail && ['requests', 'calendar', 'map'].includes(view) && <article className={`${styles.card} ${styles.detail}`}>
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{stateLabel(detail.status)}</span><h3>{detail.title}</h3></div><button onClick={() => setDetail(null)} className={styles.secondary}>Close</button></div>
           {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload up to three field photos (PNG, JPEG or WebP, up to 5 MB each). Photos over 512 KB are compressed to JPEG before upload. Field photos are public when the request is verified.</p>
-            <MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint || session.portal.settings.center} zoom={fieldPoint ? 16 : undefined} onPoint={setFieldPoint} />
+            {fieldPoint && !editingFieldLocation ?
+              <><MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint} marker={fieldPoint} zoom={16} focused />
+                <button className={styles.secondary} disabled={busy} onClick={() => setEditingFieldLocation(true)}>Change location</button></> :
+              <MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint || session.portal.settings.center} zoom={fieldPoint ? 16 : undefined} onPoint={point => { setFieldPoint(point); setEditingFieldLocation(false); }} />}
             <div className={styles.inline}><label>Longitude<input readOnly value={fieldPoint?.[0] ?? ''} placeholder="Click the map" /></label><label>Latitude<input readOnly value={fieldPoint?.[1] ?? ''} placeholder="Click the map" /></label></div>
             <label>Completion photo ({fieldPhotoCount}/3)<input type="file" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy || fieldPhotoCount >= 3} onChange={event => {
               const file = event.currentTarget.files?.[0] || null;
@@ -290,7 +296,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
                 <><p className={styles.hint}>Pinned coordinates: {detail.latitude}, {detail.longitude}</p>
                   <MapEmbed portal={session.portal} token={token} revision={revision}
                     center={[detail.longitude, detail.latitude]} marker={[detail.longitude, detail.latitude]} zoom={16}
-                    onSelect={id => void selectRequest(id)} /></> :
+                  focused /></> :
                 <p className={styles.hint}>A map location was not provided for this ticket.</p>}
             </aside>}
           </div>
