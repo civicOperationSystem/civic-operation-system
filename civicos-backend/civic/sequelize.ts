@@ -1,4 +1,5 @@
 import "pg";
+import { X509Certificate } from "node:crypto";
 import { Sequelize } from "sequelize";
 
 type ConnectionOptions = {
@@ -13,11 +14,34 @@ type ConnectionOptions = {
 
 export function createCivicSequelize(options: ConnectionOptions): Sequelize {
 	if (options.url) {
-		return new Sequelize(options.url, {
+		const verification = process.env.CIVIC_DATABASE_SSL_REJECT_UNAUTHORIZED?.trim();
+		if (verification && verification !== "true" && verification !== "false") {
+			throw new Error("CIVIC_DATABASE_SSL_REJECT_UNAUTHORIZED must be true or false");
+		}
+		const rejectUnauthorized = verification !== "false";
+		if (!rejectUnauthorized) {
+			console.warn("CivicOS database TLS certificate verification is disabled. Encryption remains enabled, but the server identity is not verified. Re-enable verification before production use.");
+		}
+		const ca = process.env.CIVIC_DATABASE_SSL_CA?.replace(/\\n/g, "\n").trim();
+		if (ca) {
+			const certificates = ca.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g);
+			if (!certificates) {
+				throw new Error("CIVIC_DATABASE_SSL_CA must contain PEM CA certificates");
+			}
+			for (const certificate of certificates) {
+				new X509Certificate(certificate);
+			}
+		}
+		const url = new URL(options.url);
+		// URL SSL options would otherwise replace Sequelize's verified TLS configuration.
+		for (const key of ["ssl", "sslmode", "sslcert", "sslkey", "sslrootcert", "uselibpqcompat"]) {
+			url.searchParams.delete(key);
+		}
+		return new Sequelize(url.toString(), {
 			dialect: "postgres",
 			logging: false,
 			...(options.pool ? { pool: options.pool } : {}),
-			dialectOptions: { ssl: { rejectUnauthorized: true } }
+			dialectOptions: { ssl: { rejectUnauthorized, ...(ca ? { ca } : {}) } }
 		});
 	}
 	return new Sequelize(options.database, options.username, options.password, {
