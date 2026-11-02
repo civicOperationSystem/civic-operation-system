@@ -87,7 +87,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   return <main className={styles.shell} style={{ '--civic-accent': settings?.color || '#0d9488' } as React.CSSProperties}>
     <header className={styles.header}>
       <Link href="/" className={styles.brand}>C<span>O</span> <strong>CivicOS</strong></Link>
-      <div className={styles.headerLinks}>{!portal && <Link href="/platform">Platform owner</Link>}<Link href={`/staff?org=${slug}`}>Staff sign in</Link><Link href={`/field?org=${slug}`}>Field workspace</Link></div>
+      <div className={styles.headerLinks}>{!portal && <Link href="/platform">Platform owner</Link>}<Link href={`/staff?org=${encodeURIComponent(portal?.slug || slug)}`}>Staff sign in</Link><Link href={`/field?org=${encodeURIComponent(portal?.slug || slug)}`}>Field workspace</Link></div>
     </header>
     {!portal ? <section className={styles.welcome}>
       <p className={styles.eyebrow}>ONE COMMUNITY. ONE CONNECTED PLATFORM.</p>

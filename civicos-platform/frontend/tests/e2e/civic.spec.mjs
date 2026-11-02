@@ -45,7 +45,7 @@ function magicLinkToken(email) {
 }
 async function signInWithMagicLink(page, path, slug, email) {
   await page.goto(`http://127.0.0.1:3310/${path}?org=${slug}`);
-  await page.getByLabel('Organization').fill(slug);
+  await expect(page.getByLabel('Organization')).toHaveAttribute('readonly', '');
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await expect(page.getByRole('status')).toContainText('one-time sign-in link has been sent');

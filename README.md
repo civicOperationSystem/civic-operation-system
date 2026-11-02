@@ -60,6 +60,8 @@ Visit http://localhost:3100/platform to sign in as the configured platform owner
 
 ### Supabase email sign-in
 
+Staff and field links on an organization's public portal carry its workspace automatically. The sign-in page displays the resolved organization name in a read-only field; only the email address needs entering. Magic-link callbacks retain the organization slug. Direct sign-in pages without an organization parameter still allow a workspace slug to be entered.
+
 The main public portal at `/` or `/portal` includes organization cards populated by `GET /api/civic/public/organizations/list`. The public directory exposes only organization names and slugs, ordered by name. Search by organization name or workspace address (for example `/portal/village-b`); organization names are suggested through the browser's native autocomplete and cards filter as you type. Choose **Open portal** on a card. Loading, empty, search-no-match and error states are shown explicitly. Direct organization URLs and custom-domain portal lookup remain supported.
 
 The platform owner, staff, and field login screens send one-time email links using Supabase Auth. In the Supabase dashboard, configure the site URL and allowlist `http://localhost:3100/**` for local development. For production, allowlist `https://your-frontend-domain.example/**`; this supports the `/platform` callback and organization-specific staff/field URLs without adding every organization separately. Configure an SMTP provider before production so your organization controls reliable email delivery. Use the same project URL and publishable/anon key in the `SUPABASE_*` and `NEXT_PUBLIC_SUPABASE_*` settings; never put a Supabase service-role key in the frontend.

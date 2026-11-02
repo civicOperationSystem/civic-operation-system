@@ -2,7 +2,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { Session as SupabaseSession } from '@supabase/supabase-js';
-import { civicApi, CivicRecord, Session, Member, RequestDetail, displayDate, fieldCanEnter } from '@/lib/civic';
+import { civicApi, CivicRecord, Session, Member, RequestDetail, Portal, displayDate, fieldCanEnter } from '@/lib/civic';
 import { getCivicSupabase, isCivicSupabaseConfigured } from '@/lib/supabase';
 import MapEmbed from './MapEmbed';
 import OrganizationSettings from './OrganizationSettings';
@@ -11,6 +11,8 @@ import styles from './civic.module.css';
 
 export default function Workspace({ field = false }: { field?: boolean }) {
   const [slug, setSlug] = useState('');
+  const [linkedOrganization, setLinkedOrganization] = useState(false);
+  const [organizationName, setOrganizationName] = useState('');
   const [token, setToken] = useState('');
   const [session, setSession] = useState<Session | null>(null);
   const [records, setRecords] = useState<CivicRecord[]>([]);
@@ -31,7 +33,22 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const exchangedToken = useRef('');
-  useEffect(() => { setSlug(new URLSearchParams(window.location.search).get('org') || ''); }, []);
+  useEffect(() => {
+    const organization = new URLSearchParams(window.location.search).get('org') || '';
+    setSlug(organization);
+    setLinkedOrganization(!!organization);
+  }, []);
+  useEffect(() => {
+    setOrganizationName('');
+    if (!linkedOrganization || !slug) return;
+    const abort = new AbortController();
+    void civicApi<Portal>(`/public/${encodeURIComponent(slug)}`, { signal: abort.signal })
+      .then(organization => { if (!abort.signal.aborted) setOrganizationName(organization.name); })
+      .catch(failure => {
+        if (!abort.signal.aborted) setError(failure instanceof Error ? failure.message : 'Could not load organization');
+      });
+    return () => abort.abort();
+  }, [linkedOrganization, slug]);
   useEffect(() => {
     if (!session) return;
     document.documentElement.lang = session.portal.settings.language;
@@ -152,7 +169,9 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     <header className={styles.header}><Link className={styles.brand} href="/">C<span>O</span> <strong>CivicOS</strong></Link>
       <div className={styles.headerLinks}><Link href={`/portal/${slug}`}>Public portal ↗</Link>{session && <button onClick={() => void logout()}>Sign out</button>}</div></header>
     {!session ? <section className={styles.login}><p className={styles.eyebrow}>{field ? 'FIELD WORKSPACE' : 'STAFF OPERATIONS'}</p><h1>{field ? 'Good work starts here.' : 'Your community at work.'}</h1><p className={styles.hint}>Sign in to your organization's secure workspace. Access is controlled by your role.</p>
-      <form onSubmit={login} className={styles.form}><label>Organization<input required value={slug} onChange={event => setSlug(event.target.value)} pattern="[a-z0-9\-]{3,60}" /></label><label>Email<input name="email" required type="email" autoComplete="email" /></label>
+      <form onSubmit={login} className={styles.form}><label>Organization{linkedOrganization ?
+        <input readOnly value={organizationName || slug} /> :
+        <input required value={slug} onChange={event => setSlug(event.target.value)} pattern="[a-z0-9\-]{3,60}" />}</label><label>Email<input name="email" required type="email" autoComplete="email" /></label>
         <button disabled={busy} className={styles.primary}>{busy ? 'Sending link…' : 'Email me a sign-in link'}</button></form>
       <p className={styles.hint}>Sign-in links are one-time use. Sign out when you finish, especially on shared devices.</p>
       {notice && <p role="status" className={styles.success}>{notice}</p>}
