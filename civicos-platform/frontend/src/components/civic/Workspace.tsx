@@ -182,6 +182,10 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   const memberLabel = (id: string | null) => id ? members.find(member => member.id === id)?.display_name || id : 'Resident / unassigned';
   const nextStates = session?.portal.settings.states.find(state => state.key === detail?.status)?.next || [];
   const previousStates = detail ? session?.portal.settings.states.filter(state => state.next.includes(detail.status)).map(state => state.key) || [] : [];
+  const canPublishTicket = !!detail && (() => {
+    const state = session?.portal.settings.states.find(item => item.key === detail.status);
+    return !!state && (state.key === 'completed' || state.next.length === 0);
+  })();
   async function logout() {
     try {
       if (isCivicSupabaseConfigured()) {
@@ -279,7 +283,8 @@ export default function Workspace({ field = false }: { field?: boolean }) {
               await civicApi(`/staff/requests/${detail.id}/assign`, { token, method: 'POST', body: { assigned_to: worker, notes, note_visibility: noteVisibility } });
               setDetail(await civicApi<RequestDetail>(`/staff/requests/${detail.id}`, { token })); await load(); setNotes('');
             }, 'Assignment recorded')}>Save assignment</button></div>}
-          {has('publish') && !field && <label className={styles.checkbox}><input type="checkbox" checked={detail.published} disabled={busy} onChange={event => {
+          {has('publish') && !field && !canPublishTicket && !detail.published && <p className={styles.hint}>Complete this ticket before it can be published to the public portal.</p>}
+          {has('publish') && !field && (canPublishTicket || detail.published) && <label className={styles.checkbox}><input type="checkbox" checked={detail.published} disabled={busy} onChange={event => {
             const published = event.target.checked;
             setDetail({ ...detail, published });
             void action(async () => {
@@ -287,7 +292,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
               catch (failure) { setDetail(detail); throw failure; }
               setRevision(value => value + 1);
             }, 'Map visibility updated');
-          }} /> Publish this request's title, status, and location on the public map and calendar</label>}
+          }} /> Publish completed ticket to the public map and calendar</label>}
           {!showArchived && has('read') && <button disabled={busy} className={styles.secondary} onClick={() => void archive()}>Archive request</button>}
           {showArchived && has('manage') && <button disabled={busy} className={styles.secondary} onClick={() => void archive(true)}>Restore request</button>}
           <h3>Audit trail</h3><ol className={styles.timeline}>{detail.history.map(event => <li key={event.id}><strong>{stateLabel(event.previous_status)} → {stateLabel(event.new_status)}</strong><small>{memberLabel(event.actor)} · {displayDate(event.created_at, session.portal.settings)}</small>{event.assigned_to && <small>Assigned: {memberLabel(event.assigned_to)}</small>}{event.notes && <p>{event.notes}</p>}</li>)}</ol>

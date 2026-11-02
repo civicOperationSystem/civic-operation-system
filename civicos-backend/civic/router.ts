@@ -147,6 +147,10 @@ function requireOperations(context: Context): void {
 		}
 		return viewer === author;
 	}
+function readyForPublicTicket(record: RecordRow, states: State[]): boolean {
+	const state = states.find(item => item.key === record.status);
+	return !!state && (state.key === "completed" || state.next.length === 0);
+}
 async function requestFor(context: Context, id: unknown, lock = false): Promise<RecordRow> {
 	requireOperations(context);
 	const [record] = await rows<RecordRow>(
@@ -538,6 +542,9 @@ secured("post", "/staff/requests/:id/restore", "manage", async (req, res, contex
 secured("post", "/staff/requests/:id/visibility", "publish", async (req, res, context) => {
 	const record = await requestFor(context, req.params.id);
 	if (typeof req.body.published !== "boolean") throw new CivicError(400, "Invalid visibility");
+	if (req.body.published && !readyForPublicTicket(record, context.portal.settings.states)) {
+		throw new CivicError(409, "Complete this ticket before publishing it to the public portal");
+	}
 	await rows("UPDATE civic.records SET published = :published WHERE id = :id RETURNING id",
 		{ id: record.id, published: req.body.published }, context.tx);
 	res.json({ published: req.body.published });
