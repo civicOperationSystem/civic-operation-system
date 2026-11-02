@@ -194,7 +194,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     const state = session?.portal.settings.states.find(item => item.key === detail.status);
     return !!state && (state.key === 'completed' || state.next.length === 0);
   })();
-  const ticketPhotoCount = detail ? (detail.photo ? 1 : 0) + detail.field_photos.length : 0;
+  const ticketPhotoCount = detail ? detail.photos.length + detail.field_photos.length : 0;
   async function logout() {
     try {
       if (isCivicSupabaseConfigured()) {
@@ -279,7 +279,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
             }} /></label></section>}
           <p>{detail.description}</p><p>{detail.location}</p><code>{detail.reference}</code>
           {detail.contact && <p>Private contact: {detail.contact.name} · {detail.contact.email} {detail.contact.phone}</p>}
-          {detail.photo && <img src={detail.photo} alt="Resident-submitted issue photo" />}
+          {detail.photos.map((photo, index) => <img key={photo} src={photo} alt={`Resident-submitted issue photo ${index + 1}`} />)}
           {detail.field_photos.map((photo, index) => <img key={photo} src={photo} alt={`Field work photo ${index + 1}`} />)}
           <h3>Work updates</h3><p className={styles.hint}>Notes and staff identities remain private. Residents see only the public status and update times.</p>
           <label>Private note<textarea rows={3} maxLength={5000} value={notes} onChange={event => setNotes(event.target.value)} /></label>

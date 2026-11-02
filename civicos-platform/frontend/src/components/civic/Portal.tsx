@@ -68,15 +68,16 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
     const form = event.currentTarget;
     const data = new FormData(form);
     try {
-      const file = data.get('photo');
-      const photo = file instanceof File && file.size ? await readPhoto(file) : null;
+      const files = data.getAll('photos').filter((value): value is File => value instanceof File && value.size > 0);
+      if (files.length > 3) throw new Error('You can upload no more than three photos.');
+      const photos = await Promise.all(files.map(readPhoto));
       const longitude = data.get('longitude')?.toString();
       const latitude = data.get('latitude')?.toString();
       const response = await civicApi<{ reference: string }>(`/public/${portal!.slug}/requests`, {
         method: 'POST', body: {
           category: data.get('category'), description: data.get('description'), location: data.get('location'),
           longitude: longitude ? Number(longitude) : null, latitude: latitude ? Number(latitude) : null,
-          anonymous, photo, contact: anonymous ? null : {
+          anonymous, photos, contact: anonymous ? null : {
             name: data.get('name'), email: data.get('email'), phone: data.get('phone'),
           },
         },
@@ -198,7 +199,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             <label>Location<input name="location" required maxLength={500} placeholder="Street, landmark, or facility" /></label>
             <div className={styles.inline}><label>Longitude<input name="longitude" type="number" step="any" min={-180} max={180} value={point?.[0] ?? ''} onChange={event => setPoint([Number(event.target.value), point?.[1] ?? 0])} /></label>
               <label>Latitude<input name="latitude" type="number" step="any" min={-90} max={90} value={point?.[1] ?? ''} onChange={event => setPoint([point?.[0] ?? 0, Number(event.target.value)])} /></label></div>
-            <label>Photo (optional, up to 2 MB)<input name="photo" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+            <label>Photos (optional, up to 3; 2 MB each)<input name="photos" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label>
             {settings?.anonymous && <label className={styles.checkbox}><input type="checkbox" checked={anonymous} onChange={event => setAnonymous(event.target.checked)} /> Report anonymously</label>}
             {!anonymous && <><label>Your name<input name="name" required maxLength={100} autoComplete="name" /></label><label>Email<input name="email" type="email" required maxLength={254} autoComplete="email" /></label><label>Phone (optional)<input name="phone" maxLength={50} type="tel" autoComplete="tel" /></label></>}
             <button disabled={busy} className={styles.primary}>{busy ? 'Submitting…' : 'Submit request'}</button>

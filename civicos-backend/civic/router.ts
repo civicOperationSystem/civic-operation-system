@@ -19,6 +19,7 @@ type RecordRow = {
 	longitude: number | null; latitude: number | null; published: boolean;
 	status: string | null; reference: string | null; assigned_to: string | null;
 	photo: string | null;
+	photos: string[];
 	field_photo: string | null;
 	field_photos: string[];
 	created_at: string; updated_at: string;
@@ -31,7 +32,7 @@ type HistoryRow = {
 	notes: string; note_visibility: "role_only" | "down_chain"; assigned_to: string | null; created_at: string;
 };
 const publicColumns = "id, kind, title, description, location, longitude, latitude, url, created_at, updated_at";
-const staffColumns = "id, kind, title, description, location, category, longitude, latitude, published, status, reference, assigned_to, archived_at, field_photo, field_photos, created_at, updated_at";
+const staffColumns = "id, kind, title, description, location, category, longitude, latitude, published, status, reference, assigned_to, archived_at, photo, photos, field_photo, field_photos, created_at, updated_at";
 const contentKinds = ["service", "announcement", "event", "project", "facility", "document", "emergency", "infrastructure"];
 export const civicRouter = Router();
 
@@ -174,6 +175,13 @@ function photo(value: unknown): string | null {
 	if (!valid || bytes.length > 2097152) throw new CivicError(400, "Invalid image or image exceeds 2 MB");
 	return value;
 }
+function photos(value: unknown): string[] {
+	const values = value == null ? [] : Array.isArray(value) ? value : [value];
+	if (values.length > 3) throw new CivicError(400, "A ticket can have no more than three photos");
+	const validated = values.map(photo);
+	if (validated.some(image => image === null)) throw new CivicError(400, "Each photo must be a PNG, JPEG or WebP image");
+	return validated as string[];
+}
 function publicStatus(status: string | null, states: State[]): string {
 	return states.find(state => state.key === status)?.label || "Status unavailable";
 }
@@ -220,8 +228,8 @@ civicRouter.get("/public/:slug/requests/calendar", endpoint(async (req, res) => 
 civicRouter.get("/public/:slug/requests/:id", endpoint(async (req, res) => {
 	const portal = await portalBySlug(req.params.slug);
 	const result = await tenantTransaction(portal.id, async tx => {
-		const [record] = await rows<Pick<RecordRow, "id" | "title" | "description" | "category" | "status" | "location" | "longitude" | "latitude" | "photo" | "field_photos" | "published" | "created_at" | "updated_at">>(
-			"SELECT id, title, description, category, status, location, longitude, latitude, photo, field_photos, published, created_at, updated_at FROM civic.records WHERE id = :id AND kind = 'request' AND status <> 'submitted' AND archived_at IS NULL",
+		const [record] = await rows<Pick<RecordRow, "id" | "title" | "description" | "category" | "status" | "location" | "longitude" | "latitude" | "photos" | "field_photos" | "published" | "created_at" | "updated_at">>(
+			"SELECT id, title, description, category, status, location, longitude, latitude, photos, field_photos, published, created_at, updated_at FROM civic.records WHERE id = :id AND kind = 'request' AND status <> 'submitted' AND archived_at IS NULL",
 			{ id: identifier(req.params.id) }, tx);
 		if (!record) throw new CivicError(404, "Public request not found");
 		const history = await rows<{ new_status: string; created_at: string }>(
@@ -236,7 +244,7 @@ civicRouter.get("/public/:slug/requests/:id", endpoint(async (req, res) => {
 			location: record.published ? record.location : "",
 			longitude: record.published ? record.longitude : null,
 			latitude: record.published ? record.latitude : null,
-			photos: record.published ? [record.photo, ...record.field_photos].filter((value): value is string => !!value) : [],
+			photos: record.published ? [...record.photos, ...record.field_photos] : [],
 			created_at: record.created_at,
 			updated_at: record.updated_at,
 			completed_at: completedAt,
@@ -265,13 +273,15 @@ civicRouter.post("/public/:slug/requests", rateLimit, endpoint(async (req, res) 
 		description: text(req.body.description, "description", 5000),
 		location: text(req.body.location, "location", 500),
 		...coordinates(req.body.longitude, req.body.latitude),
-		contact: JSON.stringify(contact), photo: photo(req.body.photo)
+		contact: JSON.stringify(contact), photos: photos(req.body.photos === undefined ? req.body.photo : req.body.photos)
 	};
 	await tenantTransaction(portal.id, async tx => {
 		await rows(`INSERT INTO civic.records (id, tenant_id, kind, title, description, category, location,
-			longitude, latitude, status, reference, contact, photo)
+			longitude, latitude, status, reference, contact, photo, photos)
 			VALUES (:id, :tenant, 'request', :category, :description, :category, :location,
-			:longitude, :latitude, 'submitted', :reference, CAST(:contact AS jsonb), :photo) RETURNING id`, values, tx);
+			:longitude, :latitude, 'submitted', :reference, CAST(:contact AS jsonb), :firstPhoto,
+			ARRAY(SELECT jsonb_array_elements_text(CAST(:photos AS jsonb)))) RETURNING id`,
+			{ ...values, firstPhoto: values.photos[0] || null, photos: JSON.stringify(values.photos) }, tx);
 		await rows(`INSERT INTO civic.history(id, tenant_id, request_id, new_status)
 			VALUES (:history, :tenant, :id, 'submitted') RETURNING id`, { ...values, history: randomUUID() }, tx);
 	});
@@ -540,7 +550,7 @@ secured("post", "/staff/requests/:id/field-photo", null, async (req, res, contex
 	const record = await requestFor(context, req.params.id, true);
 	const fieldPhoto = photo(req.body.photo);
 	if (!fieldPhoto) throw new CivicError(400, "Choose a field photo to upload");
-	if ((record.photo ? 1 : 0) + record.field_photos.length >= 3) {
+	if (record.photos.length + record.field_photos.length >= 3) {
 		throw new CivicError(400, "A ticket can have no more than three photos");
 	}
 	const coordinatesProvided = req.body.longitude !== undefined || req.body.latitude !== undefined;
