@@ -4,6 +4,10 @@ import { resolve } from 'node:path';
 if (process.env.CIVIC_DATABASE !== 'civicos_test' || !process.env.E2E_SLUG?.startsWith('browser-')) {
   throw new Error('Browser fixtures may run only in civicos_test with a generated browser slug');
 }
+if (process.env.CIVIC_ADMIN_DATABASE_URL !== '' || process.env.CIVIC_DATABASE_URL !== '' || process.env.DATABASE_URL !== '' ||
+    process.env.CIVIC_DB_HOST !== '127.0.0.1' || process.env.CIVIC_MIGRATE_ONLY !== 'false') {
+  throw new Error('Browser fixtures require the isolated local test database and must not use database URLs');
+}
 const directory = resolve('../../civicos-backend');
 execFileSync(process.execPath, ['dist/scripts/civic-init.js'], {
   cwd: directory,
