@@ -59,3 +59,47 @@ export async function readPhoto(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+
+export async function readFieldPhoto(file: File): Promise<string> {
+  if (file.size > 5 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    throw new Error('Choose a PNG, JPEG or WebP image no larger than 5 MB.');
+  }
+  const uploadLimit = 512 * 1024;
+  if (file.size <= uploadLimit) return readPhoto(file);
+
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error('Could not read the selected image.'));
+      image.src = url;
+    });
+    if (!image.naturalWidth || !image.naturalHeight) throw new Error('The selected image has invalid dimensions.');
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Photo compression is not available in this browser.');
+
+    let scale = Math.min(1, 2560 / Math.max(image.naturalWidth, image.naturalHeight));
+    for (let attempt = 0; attempt < 5; attempt++) {
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      for (const quality of [0.85, 0.7, 0.55]) {
+        const compressed = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not compress the selected photo.')), 'image/jpeg', quality);
+        });
+        if (compressed.type !== 'image/jpeg') throw new Error('Photo compression is not available in this browser.');
+        if (compressed.size <= uploadLimit) {
+          return await readPhoto(new File([compressed], 'field-photo.jpg', { type: 'image/jpeg' }));
+        }
+      }
+      scale *= 0.7;
+    }
+    throw new Error('Could not reduce this photo enough to upload. Try a smaller image.');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

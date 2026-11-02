@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { civicApi, displayDate, readPhoto, fieldCanEnter } from '../src/lib/civic.ts';
+import { civicApi, displayDate, readPhoto, readFieldPhoto, fieldCanEnter } from '../src/lib/civic.ts';
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -35,6 +35,8 @@ test('dates respect organization locale and timezone', () => {
 test('unsupported and oversized photos fail explicitly before upload', async () => {
   await assert.rejects(readPhoto(new File(['svg'], 'photo.svg', { type: 'image/svg+xml' })), /PNG, JPEG or WebP/);
   await assert.rejects(readPhoto(new File([new Uint8Array(2097153)], 'large.png', { type: 'image/png' })), /2 MB/);
+  await assert.rejects(readFieldPhoto(new File(['pdf'], 'photo.pdf', { type: 'application/pdf' })), /PNG, JPEG or WebP/);
+  await assert.rejects(readFieldPhoto(new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'large.png', { type: 'image/png' })), /5 MB/);
 });
 test('configured field access overrides the legacy in-progress/completed convention', () => {
   assert.equal(fieldCanEnter({ key: 'repairing', label: 'Repairing', next: [], field: true }), true);

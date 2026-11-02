@@ -2,7 +2,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { Session as SupabaseSession } from '@supabase/supabase-js';
-import { civicApi, CivicRecord, Session, Member, RequestDetail, Portal, displayDate, fieldCanEnter, readPhoto } from '@/lib/civic';
+import { civicApi, CivicRecord, Session, Member, RequestDetail, Portal, displayDate, fieldCanEnter, readFieldPhoto } from '@/lib/civic';
 import { getCivicSupabase, isCivicSupabaseConfigured } from '@/lib/supabase';
 import MapEmbed from './MapEmbed';
 import OrganizationSettings from './OrganizationSettings';
@@ -169,7 +169,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   async function uploadFieldPhoto(file: File | null) {
     if (!detail || !file) return;
     await action(async () => {
-      const photo = await readPhoto(file);
+      const photo = await readFieldPhoto(file);
       await civicApi(`/staff/requests/${detail.id}/field-photo`, {
         token, method: 'POST', body: {
           photo, longitude: fieldPoint?.[0], latitude: fieldPoint?.[1],
@@ -269,7 +269,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
         {view === 'map' && <><p className={styles.hint}>Your permissions determine which requests and locations appear. Select a request marker or a request in the location list to open its work record.</p><MapEmbed portal={session.portal} token={token} revision={revision} onSelect={id => void selectRequest(id)} /></>}
         {detail && ['requests', 'calendar', 'map'].includes(view) && <article className={`${styles.card} ${styles.detail}`}>
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{stateLabel(detail.status)}</span><h3>{detail.title}</h3></div><button onClick={() => setDetail(null)} className={styles.secondary}>Close</button></div>
-          {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload photos to document the fix. Tickets allow up to three photos total.</p>
+          {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload PNG, JPEG or WebP photos up to 5 MB each. Photos over 512 KB are compressed to JPEG before upload. Tickets allow up to three photos total.</p>
             <MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint || session.portal.settings.center} zoom={fieldPoint ? 16 : undefined} onPoint={setFieldPoint} />
             <div className={styles.inline}><label>Longitude<input readOnly value={fieldPoint?.[0] ?? ''} placeholder="Click the map" /></label><label>Latitude<input readOnly value={fieldPoint?.[1] ?? ''} placeholder="Click the map" /></label></div>
             <label>Completion photo ({ticketPhotoCount}/3)<input type="file" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy || ticketPhotoCount >= 3} onChange={event => {

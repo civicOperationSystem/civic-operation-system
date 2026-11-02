@@ -1,8 +1,34 @@
 import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 
 const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 const userIds = new Map();
+test('field photos are compressed in the browser within the upload limits', async ({ page }) => {
+  const source = readFileSync(new URL('../../src/lib/civic.ts', import.meta.url), 'utf8');
+  const script = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+  await page.addScriptTag({ content: `(() => { const exports = {}; ${script}; window.readFieldPhoto = exports.readFieldPhoto; })()` });
+  const result = await page.evaluate(async () => {
+    const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lX8AAAAASUVORK5CYII='), c => c.charCodeAt(0));
+    const small = await window.readFieldPhoto(new File([png], 'small.png', { type: 'image/png' }));
+    const large = new File([png, new Uint8Array(5 * 1024 * 1024 - png.length)], 'large.png', { type: 'image/png' });
+    const compressed = await window.readFieldPhoto(large);
+    let oversizedError = '';
+    try { await window.readFieldPhoto(new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'too-large.png', { type: 'image/png' })); }
+    catch (error) { oversizedError = error.message; }
+    let invalidError = '';
+    try { await window.readFieldPhoto(new File([new Uint8Array(512 * 1024 + 1)], 'invalid.png', { type: 'image/png' })); }
+    catch (error) { invalidError = error.message; }
+    return { small, compressed, oversizedError, invalidError };
+  });
+  expect(result.small).toMatch(/^data:image\/png;base64,/);
+  expect(result.compressed).toMatch(/^data:image\/jpeg;base64,/);
+  expect(Buffer.from(result.compressed.split(',')[1], 'base64').length).toBeLessThanOrEqual(512 * 1024);
+  expect(result.oversizedError).toContain('5 MB');
+  expect(result.invalidError).toContain('Could not read');
+});
+
 test('main portal offers public organizations and opens the selected workspace', async ({ page }) => {
   const organization = {
     id: 'directory-fixture', name: 'Directory Test Town', slug: 'directory-test',
@@ -128,6 +154,12 @@ test('resident → staff → mobile field → verification → private-safe trac
   await expect(fieldMap.locator('section[aria-busy="false"]')).toBeVisible({ timeout: 30000 });
   await fieldMap.getByRole('button', { name: /Pothole/ }).click();
   await expect(field.getByRole('heading', { name: 'Add completion evidence', exact: true })).toBeVisible();
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lX8AAAAASUVORK5CYII=', 'base64');
+  await field.getByLabel(/Completion photo/).setInputFiles({
+    name: 'field-photo.png', mimeType: 'image/png', buffer: Buffer.concat([png, Buffer.alloc(2 * 1024 * 1024)]),
+  });
+  await expect(field.getByText('Field photo uploaded.', { exact: true })).toBeVisible();
+  await expect(field.getByAltText('Field work photo 1')).toBeVisible();
   await field.getByLabel('Internal notes').fill('Crew began work');
   await field.getByRole('button', { name: 'Start work', exact: true }).click();
   await expect(field.getByText('Workflow updated. The transition has been recorded.', { exact: true })).toBeVisible();
