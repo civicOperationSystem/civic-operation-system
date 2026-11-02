@@ -2,7 +2,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { Session as SupabaseSession } from '@supabase/supabase-js';
-import { civicApi, CivicRecord, Session, Member, RequestDetail, Portal, displayDate, fieldCanEnter } from '@/lib/civic';
+import { civicApi, CivicRecord, Session, Member, RequestDetail, Portal, displayDate, fieldCanEnter, readPhoto } from '@/lib/civic';
 import { getCivicSupabase, isCivicSupabaseConfigured } from '@/lib/supabase';
 import MapEmbed from './MapEmbed';
 import OrganizationSettings from './OrganizationSettings';
@@ -164,6 +164,15 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       setNotes('');
     }, 'Private note added to this ticket.');
   }
+  async function uploadFieldPhoto(file: File | null) {
+    if (!detail || !file) return;
+    await action(async () => {
+      const photo = await readPhoto(file);
+      await civicApi(`/staff/requests/${detail.id}/field-photo`, { token, method: 'POST', body: { photo } });
+      setDetail(await civicApi<RequestDetail>(`/staff/requests/${detail.id}`, { token }));
+      await load();
+    }, 'Field photo uploaded.');
+  }
   function stateLabel(key: string | null): string {
     return session?.portal.settings.states.find(state => state.key === key)?.label || key || 'Submitted';
   }
@@ -250,6 +259,12 @@ export default function Workspace({ field = false }: { field?: boolean }) {
           <p>{detail.description}</p><p>{detail.location}</p><code>{detail.reference}</code>
           {detail.contact && <p>Private contact: {detail.contact.name} · {detail.contact.email} {detail.contact.phone}</p>}
           {detail.photo && <img src={detail.photo} alt="Resident-submitted issue photo" />}
+          {detail.field_photo && <img src={detail.field_photo} alt="Field work photo" />}
+          {field && <label>Field work photo<input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={event => {
+            const file = event.currentTarget.files?.[0] || null;
+            event.currentTarget.value = '';
+            void uploadFieldPhoto(file);
+          }} /></label>}
           <h3>Work updates</h3><p className={styles.hint}>Notes and staff identities remain private. Residents see only the public status and update times.</p>
           <label>Private note<textarea rows={3} maxLength={5000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <label>Note visibility<select value={field ? 'down_chain' : noteVisibility} disabled={field} onChange={event => setNoteVisibility(event.target.value as 'role_only' | 'down_chain')}><option value="role_only">Only my role level</option><option value="down_chain">Share down the operational chain</option></select></label>

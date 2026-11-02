@@ -18,6 +18,7 @@ type RecordRow = {
 	id: string; kind: string; title: string; description: string; location: string; category: string | null;
 	longitude: number | null; latitude: number | null; published: boolean;
 	status: string | null; reference: string | null; assigned_to: string | null;
+	field_photo: string | null;
 	created_at: string; updated_at: string;
 };
 type ChatMessage = {
@@ -28,7 +29,7 @@ type HistoryRow = {
 	notes: string; note_visibility: "role_only" | "down_chain"; assigned_to: string | null; created_at: string;
 };
 const publicColumns = "id, kind, title, description, location, longitude, latitude, url, created_at, updated_at";
-const staffColumns = "id, kind, title, description, location, category, longitude, latitude, published, status, reference, assigned_to, archived_at, created_at, updated_at";
+const staffColumns = "id, kind, title, description, location, category, longitude, latitude, published, status, reference, assigned_to, archived_at, field_photo, created_at, updated_at";
 const contentKinds = ["service", "announcement", "event", "project", "facility", "document", "emergency", "infrastructure"];
 export const civicRouter = Router();
 
@@ -208,8 +209,8 @@ civicRouter.get("/public/:slug/requests/calendar", endpoint(async (req, res) => 
 civicRouter.get("/public/:slug/requests/:id", endpoint(async (req, res) => {
 	const portal = await portalBySlug(req.params.slug);
 	const result = await tenantTransaction(portal.id, async tx => {
-		const [record] = await rows<Pick<RecordRow, "id" | "title" | "category" | "status" | "location" | "longitude" | "latitude" | "created_at" | "updated_at">>(
-			"SELECT id, title, category, status, location, longitude, latitude, created_at, updated_at FROM civic.records WHERE id = :id AND kind = 'request' AND published AND archived_at IS NULL",
+		const [record] = await rows<Pick<RecordRow, "id" | "title" | "category" | "status" | "location" | "longitude" | "latitude" | "field_photo" | "created_at" | "updated_at">>(
+			"SELECT id, title, category, status, location, longitude, latitude, field_photo, created_at, updated_at FROM civic.records WHERE id = :id AND kind = 'request' AND published AND archived_at IS NULL",
 			{ id: identifier(req.params.id) }, tx);
 		if (!record) throw new CivicError(404, "Public request not found");
 		const history = await rows<{ new_status: string; created_at: string }>(
@@ -512,6 +513,14 @@ secured("post", "/staff/requests/:id/notes", null, async (req, res, context) => 
 		visibility: noteVisibility(req.body.note_visibility, context), assigned: record.assigned_to
 	}, context.tx);
 	res.status(201).json({ recorded: true });
+}, rateLimit);
+secured("post", "/staff/requests/:id/field-photo", null, async (req, res, context) => {
+	const record = await requestFor(context, req.params.id, true);
+	const fieldPhoto = photo(req.body.photo);
+	if (!fieldPhoto) throw new CivicError(400, "Choose a field photo to upload");
+	await rows("UPDATE civic.records SET field_photo = :fieldPhoto, updated_at = now() WHERE id = :id RETURNING id",
+		{ id: record.id, fieldPhoto }, context.tx);
+	res.status(201).json({ uploaded: true });
 }, rateLimit);
 secured("post", "/staff/requests/:id/archive", "read", async (req, res, context) => {
 	const record = await requestFor(context, req.params.id, true);

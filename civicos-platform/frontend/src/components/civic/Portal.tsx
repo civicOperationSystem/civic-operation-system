@@ -9,7 +9,7 @@ const kinds = ['all', 'service', 'announcement', 'event', 'project', 'facility',
 type PublicCalendarRequest = { id: string; title: string; category: string | null; status: string; created_at: string };
 type PublicRequestDetail = PublicCalendarRequest & {
   location: string; longitude: number | null; latitude: number | null; updated_at: string;
-  history: { status: string; timestamp: string }[];
+  field_photo: string | null; history: { status: string; timestamp: string }[];
 };
 export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [slug, setSlug] = useState(initialSlug);
@@ -194,6 +194,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="public-ticket-title">
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{publicRequestDetail.status}</span><h2 id="public-ticket-title">{publicRequestDetail.title}</h2></div><button className={styles.secondary} onClick={() => setPublicRequestDetail(null)}>Close</button></div>
           <div className={styles.ticketModalLayout}><div><p>{publicRequestDetail.category || 'Community request'}</p><p>Reported {displayDate(publicRequestDetail.created_at, portal.settings)}</p><p>Updated {displayDate(publicRequestDetail.updated_at, portal.settings)}</p>
+            {publicRequestDetail.field_photo && <img className={styles.ticketPhoto} src={publicRequestDetail.field_photo} alt={`Field work for ${publicRequestDetail.title}`} />}
             <h3>Public status updates</h3><ol className={styles.timeline}>{publicRequestDetail.history.map((event, index) => <li key={index}><strong>{event.status}</strong><small>{displayDate(event.timestamp, portal.settings)}</small></li>)}</ol></div>
             <aside><h3>Public location</h3><p>{publicRequestDetail.location || 'Location details are not available.'}</p>{publicRequestDetail.longitude !== null && publicRequestDetail.latitude !== null ?
               <MapEmbed portal={portal} center={[publicRequestDetail.longitude, publicRequestDetail.latitude]} zoom={16} onSelect={id => void selectPublicRequest(id)} /> :

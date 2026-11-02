@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS civic.records (
   reference text UNIQUE,
   contact jsonb,
   photo text,
+  field_photo text,
   url text,
   assigned_to uuid,
   archived_at timestamptz,
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS civic.records (
 );
 ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS archived_at timestamptz;
 ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS archived_by uuid;
+ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS field_photo text;
 ALTER TABLE civic.records DROP CONSTRAINT IF EXISTS records_tenant_id_archived_by_fkey;
 ALTER TABLE civic.records ADD CONSTRAINT records_tenant_id_archived_by_fkey
   FOREIGN KEY (tenant_id, archived_by) REFERENCES civic.members(tenant_id, id);
