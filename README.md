@@ -109,7 +109,7 @@ This updates the schema without creating or resetting organization records. Sour
 
 ### Platform owner and organization administration
 
-The configured `CIVIC_PLATFORM_ADMIN_EMAIL` is the initial global platform owner. Only a verified Supabase identity matching that backend environment value can sign in at `/platform`, list organization names/slugs/domains, and create organization workspaces. When creating an organization, the platform owner appoints its first Bottom admin by email. Organization data is created under PostgreSQL row-level security in one transaction. Each Bottom admin can add, activate, deactivate, and assign roles to members only inside their own organization; tenant administrators cannot use platform-owner endpoints.
+The configured `CIVIC_PLATFORM_ADMIN_EMAIL` is the initial global platform owner. Only a verified Supabase identity matching that backend environment value can sign in at `/platform`, list organization names/slugs/domains, and create organization workspaces. When creating an organization, the platform owner appoints its first Bottom admin by email. Organization data is created under PostgreSQL row-level security in one transaction. Each Bottom admin can add, activate, deactivate, and assign roles to other members only inside their own organization; tenant administrators cannot use platform-owner endpoints. The platform owner can archive an organization from `/platform`, which immediately removes it from public discovery and prevents staff access, then restore it if needed. Permanent removal is available only after archive confirmation and deletes that organization's data.
 
 For local development, the first Compose setup may still create a starter organization using `CIVIC_ADMIN_EMAIL` and `CIVIC_SLUG`; afterward, the platform owner can create further organizations from `/platform`. For Vercel, run the schema-only setup once from a trusted environment before deploying:
 
@@ -123,7 +123,7 @@ Provide `CIVIC_ADMIN_DATABASE_URL` and `CIVIC_DATABASE_URL` through the trusted 
 
 ### Request board, archival and private notes
 
-Staff and field workspaces display active service requests in workflow-status columns. Staff and administrators can archive a request; archived requests leave the active board. Administrators can enable **Show archived requests** and restore them.
+Staff and field workspaces display service requests in workflow-status columns and a searchable request calendar. Search matches request details, category, location, tracking reference, and status. Requests can move forward to configured next states or back one directly configured workflow step; they cannot jump to arbitrary states. Staff and administrators can archive a request; archived requests leave the active board. Administrators can enable **Show archived requests** and restore them; the calendar includes archived requests with an archived label.
 
 Private notes are retained in the request audit trail but are never public. They default to **Only my role level**. The author can choose **Share down the operational chain** for a staff/admin note; this makes staff notes available to field workers and admin notes available to staff and field workers. Field notes are always visible to field workers, staff, and administrators.
 

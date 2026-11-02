@@ -4,8 +4,8 @@ import { civicApi, Session, Member, displayDate } from '@/lib/civic';
 import styles from './civic.module.css';
 
 type Channel = { id: string; name: string; description: string; created_at: string };
-type Direct = { id: string; member_id: string; member_email: string; last_message: string | null; updated_at: string | null };
-type ChatMessage = { id: string; sender_id: string; sender_email: string; body: string; created_at: string };
+type Direct = { id: string; member_id: string; member_email: string; member_name: string; last_message: string | null; updated_at: string | null };
+type ChatMessage = { id: string; sender_id: string; sender_email: string; sender_name: string; body: string; created_at: string };
 type Conversation = { type: 'channel'; id: string } | { type: 'direct'; id: string };
 const messagesPath = (conversation: Conversation) =>
   `/staff/chat/${conversation.type === 'channel' ? 'channels' : 'direct'}/${encodeURIComponent(conversation.id)}/messages`;
@@ -19,6 +19,7 @@ export default function ChatPanel({ token, session }: { token: string; session: 
   const [draft, setDraft] = useState('');
   const [channelName, setChannelName] = useState('');
   const [description, setDescription] = useState('');
+  const [contactSearch, setContactSearch] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const bottom = useRef<HTMLLIElement>(null);
@@ -113,6 +114,8 @@ export default function ChatPanel({ token, session }: { token: string; session: 
   }
   const activeChannel = conversation?.type === 'channel' ? channels.find(item => item.id === conversation.id) : null;
   const activeDirect = conversation?.type === 'direct' ? directs.find(item => item.id === conversation.id) : null;
+  const matchingContacts = contacts.filter(member =>
+    `${member.display_name} ${member.email} ${member.role}`.toLowerCase().includes(contactSearch.trim().toLowerCase()));
   return <section className={styles.chatLayout} aria-label="Organization chat">
     <aside className={styles.chatSidebar}>
       <h3>Organization channels</h3>
@@ -130,23 +133,24 @@ export default function ChatPanel({ token, session }: { token: string; session: 
       <h3>Private messages</h3>
       <div className={styles.chatNavigation}>{directs.map(direct =>
         <button key={direct.id} aria-current={conversation?.type === 'direct' && conversation.id === direct.id ? 'page' : undefined}
-          onClick={() => setConversation({ type: 'direct', id: direct.id })}>↗ {direct.member_email}<small>{direct.last_message || 'Start a private conversation'}</small></button>)}</div>
-      <label className={styles.chatContact}>Message a teammate<select value="" disabled={busy} onChange={event => {
+          onClick={() => setConversation({ type: 'direct', id: direct.id })}>↗ {direct.member_name}<small>{direct.last_message || 'Start a private conversation'}</small></button>)}</div>
+      <label className={styles.chatContact}>Find a teammate by name<input value={contactSearch} onChange={event => setContactSearch(event.target.value)} placeholder="Search a name" />
+      <select value="" disabled={busy} onChange={event => {
         const member = contacts.find(item => item.id === event.target.value);
         if (member) void openDirect(member);
-      }}><option value="">Choose a teammate…</option>{contacts.map(member =>
-        <option key={member.id} value={member.id}>{member.email} · {member.role}</option>)}</select></label>
+      }}><option value="">Choose a teammate…</option>{matchingContacts.map(member =>
+        <option key={member.id} value={member.id}>{member.display_name} · {member.role}</option>)}</select></label>
     </aside>
     <div className={styles.chatConversation}>
       <header className={styles.chatHeader}>
-        <div><h3>{activeChannel ? `# ${activeChannel.name}` : activeDirect?.member_email || 'Choose a conversation'}</h3>
+        <div><h3>{activeChannel ? `# ${activeChannel.name}` : activeDirect?.member_name || 'Choose a conversation'}</h3>
           <p>{activeChannel?.description || (activeDirect ? 'Private conversation — visible only to you and this teammate.' : `${session.portal.name} staff messages`)}</p></div>
         <small>Updates every few seconds</small>
       </header>
       {error && <p role="alert" className={styles.error}>{error}</p>}
       <ol className={styles.chatMessages} aria-label="Chat messages" aria-live="polite">
         {messages.map(message => <li key={message.id} className={message.sender_id === session.user.id ? styles.ownMessage : ''}>
-          <div className={styles.messageMeta}><strong>{message.sender_id === session.user.id ? 'You' : message.sender_email}</strong><time dateTime={message.created_at}>{displayDate(message.created_at, session.portal.settings)}</time></div>
+          <div className={styles.messageMeta}><strong>{message.sender_id === session.user.id ? 'You' : message.sender_name}</strong><time dateTime={message.created_at}>{displayDate(message.created_at, session.portal.settings)}</time></div>
           <p>{message.body}</p>
         </li>)}
         {conversation && !messages.length && <li className={styles.chatEmpty}>This conversation is ready. Send a message to get started.</li>}

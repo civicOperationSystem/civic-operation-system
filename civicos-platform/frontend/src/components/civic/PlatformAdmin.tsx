@@ -7,7 +7,7 @@ import { civicApi } from '@/lib/civic';
 import { getCivicSupabase, isCivicSupabaseConfigured } from '@/lib/supabase';
 import styles from './civic.module.css';
 
-type Organization = { id: string; slug: string; name: string; domain: string | null };
+type Organization = { id: string; slug: string; name: string; domain: string | null; archived_at: string | null };
 
 export default function PlatformAdmin() {
   const [token, setToken] = useState('');
@@ -128,6 +128,41 @@ export default function PlatformAdmin() {
     }
   }
 
+  async function setOrganizationArchived(organization: Organization, archived: boolean) {
+    const action = archived ? 'archive' : 'restore';
+    if (!window.confirm(`${archived ? 'Archive' : 'Restore'} ${organization.name}?`)) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await civicApi<{ id: string; archived_at: string | null }>(`/platform/organizations/${organization.id}/archive`, {
+        token, method: 'PUT', body: { archived },
+      });
+      setOrganizations(current => current.map(item => item.id === organization.id ? { ...item, archived_at: result.archived_at } : item));
+      setNotice(`${organization.name} was ${action}d.`);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : `Could not ${action} organization`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeOrganization(organization: Organization) {
+    if (!window.confirm(`Permanently remove ${organization.name} and all of its data? This cannot be undone.`)) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await civicApi<{ removed: boolean }>(`/platform/organizations/${organization.id}`, { token, method: 'DELETE' });
+      setOrganizations(current => current.filter(item => item.id !== organization.id));
+      setNotice(`${organization.name} was permanently removed.`);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not remove organization');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <main className={styles.shell}>
     <header className={styles.header}>
       <Link className={styles.brand} href="/">C<span>O</span> <strong>CivicOS</strong></Link>
@@ -164,11 +199,17 @@ export default function PlatformAdmin() {
           <h3>Organizations ({organizations.length})</h3>
           {!organizations.length ? <div className={styles.empty}><p>No organizations have been created yet.</p></div> :
             <div className={styles.fieldCards}>{organizations.map(organization => <article key={organization.id} className={styles.card}>
-              <span className={styles.tag}>{organization.slug}</span>
+              <span className={styles.tag}>{organization.archived_at ? 'Archived' : organization.slug}</span>
               <h3>{organization.name}</h3>
               {organization.domain && <p>{organization.domain}</p>}
-              <Link href={`/staff?org=${encodeURIComponent(organization.slug)}`}>Open staff sign-in</Link>
-              <Link href={`/portal/${encodeURIComponent(organization.slug)}`}>Open public portal</Link>
+              {!organization.archived_at && <><Link href={`/staff?org=${encodeURIComponent(organization.slug)}`}>Open staff sign-in</Link>
+              <Link href={`/portal/${encodeURIComponent(organization.slug)}`}>Open public portal</Link></>}
+              <div className={styles.inline}>
+                <button className={styles.secondary} disabled={busy} onClick={() => void setOrganizationArchived(organization, !organization.archived_at)}>
+                  {organization.archived_at ? 'Restore organization' : 'Archive organization'}
+                </button>
+                {organization.archived_at && <button className={styles.secondary} disabled={busy} onClick={() => void removeOrganization(organization)}>Remove permanently</button>}
+              </div>
             </article>)}</div>}
         </section>
       </div>

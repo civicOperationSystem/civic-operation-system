@@ -264,7 +264,7 @@ describe("CivicOS end-to-end workflow and private-safe tracking", () => {
 		const tracked = await request(app).post(`/api/civic/public/${slugA}/track`).send({ reference });
 		expect(tracked.status).toBe(200);
 		expect(tracked.body.status).toBe("Verified");
-		expect(Object.keys(tracked.body).sort()).toEqual(["category", "history", "reference", "reported", "status", "updated"]);
+		expect(Object.keys(tracked.body).sort()).toEqual(["category", "history", "reference", "reported", "status", "title", "updated"]);
 		for (const event of tracked.body.history) expect(Object.keys(event).sort()).toEqual(["status", "timestamp"]);
 		expect(JSON.stringify(tracked.body)).not.toContain("Private");
 		expect(tracked.headers["cache-control"]).toBe("no-store");

@@ -26,6 +26,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   const [notes, setNotes] = useState('');
   const [noteVisibility, setNoteVisibility] = useState<'role_only' | 'down_chain'>('role_only');
   const [showArchived, setShowArchived] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [worker, setWorker] = useState('');
   const [roles, setRoles] = useState<Record<string, string[]>>({});
   const [newRole, setNewRole] = useState('');
@@ -60,7 +61,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   const load = useCallback(async (access = token, selectedPage = page) => {
     const current = await civicApi<Session>('/staff/me', { token: access });
     const [requests, people, pages] = await Promise.all([
-      current.permissions.some(item => item === 'read' || item === 'field') ? civicApi<CivicRecord[]>(`/staff/requests?page=${selectedPage}${showArchived ? '&archived=true' : ''}`, { token: access }) : Promise.resolve([]),
+      current.permissions.some(item => item === 'read' || item === 'field') ? civicApi<CivicRecord[]>(`/staff/requests?page=${selectedPage}${(showArchived || view === 'calendar') && current.permissions.includes('manage') ? '&archived=all' : ''}`, { token: access }) : Promise.resolve([]),
       current.permissions.includes('read') ? civicApi<Member[]>('/staff/members', { token: access }) : Promise.resolve([]),
       current.permissions.includes('publish') ? civicApi<CivicRecord[]>('/staff/content', { token: access }) : Promise.resolve([]),
     ]);
@@ -70,7 +71,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       setRoles(config.roles);
     }
     setRevision(value => value + 1);
-  }, [page, token, showArchived]);
+  }, [page, token, showArchived, view]);
   useEffect(() => {
     if (!slug || !isCivicSupabaseConfigured()) return;
     let active = true;
@@ -155,12 +156,15 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       setDetail(null); await load(token, page);
     }, restore ? 'Request restored to the active board' : 'Request archived');
   }
+  function stateLabel(key: string | null): string {
+    return session?.portal.settings.states.find(state => state.key === key)?.label || key || 'Submitted';
+  }
   const visible = records.filter(record => (!field || record.assigned_to === session?.user.id) &&
     (!status || record.status === status) &&
-    `${record.title} ${record.location} ${record.reference}`.toLowerCase().includes(search.toLowerCase()));
-  const stateLabel = (key: string | null) => session?.portal.settings.states.find(state => state.key === key)?.label || key || 'Submitted';
-  const memberLabel = (id: string | null) => id ? members.find(member => member.id === id)?.email || id : 'Resident / unassigned';
+    `${record.title} ${record.description} ${record.category} ${record.location} ${record.reference} ${stateLabel(record.status)}`.toLowerCase().includes(search.toLowerCase()));
+  const memberLabel = (id: string | null) => id ? members.find(member => member.id === id)?.display_name || id : 'Resident / unassigned';
   const nextStates = session?.portal.settings.states.find(state => state.key === detail?.status)?.next || [];
+  const previousStates = detail ? session?.portal.settings.states.filter(state => state.next.includes(detail.status)).map(state => state.key) || [] : [];
   async function logout() {
     try {
       if (isCivicSupabaseConfigured()) {
@@ -187,15 +191,15 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       {error && <p role="alert" className={styles.error}>{error}</p>}
     </section> : <div className={styles.workspace}>
       <aside className={styles.sidebar}><h3>{session.portal.name}</h3><p>{session.user.email}<br />{session.user.role} · {field ? 'Field workspace' : 'Operations'}</p>
-        {(field ? ['requests', 'map'] : [
-          ...(has('read') || has('field') ? ['requests', 'map'] : []),
+        {(field ? ['requests', 'calendar', 'map'] : [
+          ...(has('read') || has('field') ? ['requests', 'calendar', 'map'] : []),
           ...(has('chat') ? ['chat'] : []), ...(has('publish') ? ['content'] : []), ...(has('manage') ? ['members', 'settings'] : []),
         ]).map(tab => <button key={tab} aria-current={tab === view ? 'page' : undefined} onClick={() => { setView(tab); setDetail(null); setError(''); setNotice(''); }}>
-          {({ requests: field ? 'My assignments' : 'Service requests', map: 'Community map', chat: 'Staff chat', content: 'Public information', members: 'People & roles', settings: 'Organization settings' })[tab]}
+          {({ requests: field ? 'My assignments' : 'Service requests', calendar: 'Request calendar', map: 'Community map', chat: 'Staff chat', content: 'Public information', members: 'People & roles', settings: 'Organization settings' })[tab]}
         </button>)}
       </aside>
       <section className={styles.main}>
-        {view === 'chat' && !field && has('chat') ? <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>TEAM COMMUNICATION</p><h2>Staff chat</h2></div></div><ChatPanel token={token} session={session} /></> : <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>{field ? 'OUT IN THE COMMUNITY' : 'OPERATIONS OVERVIEW'}</p><h2>{({ requests: field ? 'Your work, in one place' : 'Service requests', map: 'Operational map', content: 'Public information', members: 'People & access', settings: 'Organization settings' })[view]}</h2></div>
+        {view === 'chat' && !field && has('chat') ? <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>TEAM COMMUNICATION</p><h2>Staff chat</h2></div></div><ChatPanel token={token} session={session} /></> : <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>{field ? 'OUT IN THE COMMUNITY' : 'OPERATIONS OVERVIEW'}</p><h2>{({ requests: field ? 'Your work, in one place' : 'Service requests', calendar: 'Request calendar', map: 'Operational map', content: 'Public information', members: 'People & access', settings: 'Organization settings' })[view]}</h2></div>
           <button disabled={busy} className={styles.secondary} onClick={() => void action(() => load(), 'Workspace refreshed')}>Refresh</button></div>
         {error && <p role="alert" className={styles.error}>{error}</p>}
         {notice && <p role="status" className={styles.success}>{notice}</p>}
@@ -209,15 +213,31 @@ export default function Workspace({ field = false }: { field?: boolean }) {
             {session.portal.settings.states.map(state => {
               const recordsForState = visible.filter(record => record.status === state.key);
               return <section className={styles.requestColumn} key={state.key}><h3>{state.label}<small>{recordsForState.length}</small></h3>
-                {recordsForState.map(record => <button key={record.id} className={styles.card} onClick={() => void selectRequest(record.id)}><span className={styles.tag}>{record.category}</span><strong>{record.title}</strong><p>{record.location}</p><small>{record.assigned_to ? `Assigned: ${memberLabel(record.assigned_to)}` : 'Unassigned'} · {displayDate(record.updated_at, session.portal.settings)}</small></button>)}
+                {recordsForState.map(record => <button key={record.id} className={styles.card} onClick={() => void selectRequest(record.id)}><span className={styles.tag}>{record.archived_at ? 'Archived' : record.category}</span><strong>{record.title}</strong><p>{record.location}</p><small>{record.assigned_to ? `Assigned: ${memberLabel(record.assigned_to)}` : 'Unassigned'} · {displayDate(record.updated_at, session.portal.settings)}</small></button>)}
               </section>;
             })}
           </div>
           {!visible.length && <div className={styles.empty}><h3>No requests to show.</h3><p>{field ? 'Assigned work will appear here when your team dispatches it.' : 'Requests submitted through the public portal appear here.'}</p></div>}
           <div className={styles.inline} style={{ marginTop: 18 }}><button className={styles.secondary} disabled={busy || page === 1} onClick={() => void action(async () => { await load(token, page - 1); setPage(page - 1); }, '')}>Previous</button><span>Page {page}</span><button className={styles.secondary} disabled={busy || records.length < 100} onClick={() => void action(async () => { await load(token, page + 1); setPage(page + 1); }, '')}>Next</button></div>
         </>}
+        {view === 'calendar' && (() => {
+          const monthStart = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+          const gridStart = new Date(monthStart);
+          gridStart.setDate(1 - ((monthStart.getDay() + 6) % 7));
+          const days = Array.from({ length: 42 }, (_, index) => {
+            const date = new Date(gridStart);
+            date.setDate(gridStart.getDate() + index);
+            return date;
+          });
+          const dateKey = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: session.portal.settings.timezone }).format(date);
+          const recordsForDay = (date: Date) => visible.filter(record => dateKey(new Date(record.created_at)) === dateKey(date));
+          return <><p className={styles.hint}>Requests are shown on their reported date with their current status. Administrators also see archived requests.</p>
+            <div className={styles.inline}><button className={styles.secondary} onClick={() => setCalendarMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>Previous month</button><strong>{new Intl.DateTimeFormat(session.portal.settings.language, { month: 'long', year: 'numeric' }).format(calendarMonth)}</strong><button className={styles.secondary} onClick={() => setCalendarMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>Next month</button></div>
+            <div className={styles.calendar} role="grid" aria-label="Request calendar">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <strong key={day}>{day}</strong>)}{days.map(date => <section key={date.toISOString()} className={date.getMonth() === calendarMonth.getMonth() ? styles.calendarDay : `${styles.calendarDay} ${styles.calendarMuted}`}><time dateTime={date.toISOString().slice(0, 10)}>{date.getDate()}</time>{recordsForDay(date).map(record => <button key={record.id} onClick={() => void selectRequest(record.id)}>{record.title}<small>{stateLabel(record.status)}{record.archived_at ? ' · Archived' : ''}</small></button>)}</section>)}</div>
+          </>;
+        })()}
         {view === 'map' && <><p className={styles.hint}>Your permissions determine which requests and locations appear. Select a request marker to open its work record.</p><MapEmbed portal={session.portal} token={token} revision={revision} onSelect={id => void selectRequest(id)} /></>}
-        {detail && ['requests', 'map'].includes(view) && <article className={`${styles.card} ${styles.detail}`}>
+        {detail && ['requests', 'calendar', 'map'].includes(view) && <article className={`${styles.card} ${styles.detail}`}>
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{stateLabel(detail.status)}</span><h3>{detail.title}</h3></div><button onClick={() => setDetail(null)} className={styles.secondary}>Close</button></div>
           <p>{detail.description}</p><p>{detail.location}</p><code>{detail.reference}</code>
           {detail.contact && <p>Private contact: {detail.contact.name} · {detail.contact.email} {detail.contact.phone}</p>}
@@ -226,11 +246,11 @@ export default function Workspace({ field = false }: { field?: boolean }) {
           <label>Private note<textarea rows={3} maxLength={5000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <label>Note visibility<select value={field ? 'down_chain' : noteVisibility} disabled={field} onChange={event => setNoteVisibility(event.target.value as 'role_only' | 'down_chain')}><option value="role_only">Only my role level</option><option value="down_chain">Share down the operational chain</option></select></label>
           {field && <p className={styles.hint}>Field notes are shared with staff and administrators.</p>}
-          {has('transition') && <div className={styles.inline}>{nextStates.filter(next => {
+          {has('transition') && <div className={styles.inline}>{[...new Set([...previousStates, ...nextStates])].filter(next => {
             const state = session.portal.settings.states.find(item => item.key === next);
             return (!field && has('read')) || (!!state && fieldCanEnter(state));
-          }).map(next => <button key={next} disabled={busy} className={styles.primary} onClick={() => void transition(next)}>{field && next === 'in_progress' ? 'Start work' : field && next === 'completed' ? 'Complete work' : `Move to ${stateLabel(next)}`}</button>)}</div>}
-          {has('assign') && !field && <div className={styles.form}><label>Assign a worker<select value={worker} onChange={event => setWorker(event.target.value)}><option value="">Choose a team member</option>{members.filter(member => member.active).map(member => <option key={member.id} value={member.id}>{member.email} · {member.role}</option>)}</select></label>
+          }).map(next => <button key={next} disabled={busy} className={previousStates.includes(next) ? styles.secondary : styles.primary} onClick={() => void transition(next)}>{previousStates.includes(next) ? `Move back to ${stateLabel(next)}` : field && next === 'in_progress' ? 'Start work' : field && next === 'completed' ? 'Complete work' : `Move to ${stateLabel(next)}`}</button>)}</div>}
+          {has('assign') && !field && <div className={styles.form}><label>Assign a worker<select value={worker} onChange={event => setWorker(event.target.value)}><option value="">Choose a team member</option>{members.filter(member => member.active).map(member => <option key={member.id} value={member.id}>{member.display_name} · {member.role}</option>)}</select></label>
             <button disabled={busy || !worker} className={styles.secondary} onClick={() => void action(async () => {
               await civicApi(`/staff/requests/${detail.id}/assign`, { token, method: 'POST', body: { assigned_to: worker, notes, note_visibility: noteVisibility } });
               setDetail(await civicApi<RequestDetail>(`/staff/requests/${detail.id}`, { token })); await load(); setNotes('');
@@ -267,16 +287,20 @@ export default function Workspace({ field = false }: { field?: boolean }) {
         </form></section><section><h3>Community information</h3><div className={styles.fieldCards}>{content.map(item => <article key={item.id} className={styles.card}><span className={styles.tag}>{item.kind} · {item.published ? 'Public' : 'Draft'}</span><h3>{item.title}</h3><p>{item.description}</p>
           <div className={styles.inline}><button className={styles.secondary} onClick={() => setEditingContent(item)}>Edit information</button><button disabled={busy} className={styles.secondary} onClick={() => void action(async () => { await civicApi(`/staff/content/${item.id}`, { token, method: 'PUT', body: { published: !item.published } }); await load(); }, 'Publication updated')}>{item.published ? 'Withdraw from portal' : 'Publish'}</button></div></article>)}</div></section></div>}
         {view === 'members' && has('manage') && <>
-          <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Member</th><th>Role</th><th>Access</th></tr></thead><tbody>{members.map(member => <tr key={member.id}><td>{member.email}</td><td><select aria-label={`Role for ${member.email}`} value={member.role} disabled={busy || member.id === session.user.id} onChange={event => {
+          <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Member</th><th>Role</th><th>Access</th></tr></thead><tbody>{members.map(member => <tr key={member.id}><td><label className={styles.srOnly} htmlFor={`member-name-${member.id}`}>Name for {member.email}</label><input id={`member-name-${member.id}`} defaultValue={member.display_name} disabled={busy} maxLength={100} onBlur={event => {
+            const display_name = event.currentTarget.value.trim();
+            if (!display_name || display_name === member.display_name) return;
+            void action(async () => { await civicApi(`/staff/members/${member.id}`, { token, method: 'PUT', body: { display_name, role: member.role, active: member.active } }); await load(); }, 'Member name updated');
+          }} /><small>{member.email}</small></td><td><select aria-label={`Role for ${member.email}`} value={member.role} disabled={busy || member.id === session.user.id} onChange={event => {
             const role = event.target.value;
-            void action(async () => { await civicApi(`/staff/members/${member.id}`, { token, method: 'PUT', body: { role, active: member.active } }); await load(); }, 'Member role updated');
+            void action(async () => { await civicApi(`/staff/members/${member.id}`, { token, method: 'PUT', body: { display_name: member.display_name, role, active: member.active } }); await load(); }, 'Member role updated');
           }}>{Object.keys(roles).map(role => <option key={role}>{role}</option>)}</select></td><td><button disabled={busy || member.id === session.user.id} onClick={() => void action(async () => {
-            await civicApi(`/staff/members/${member.id}`, { token, method: 'PUT', body: { role: member.role, active: !member.active } }); await load();
+            await civicApi(`/staff/members/${member.id}`, { token, method: 'PUT', body: { display_name: member.display_name, role: member.role, active: !member.active } }); await load();
           }, 'Account access updated')}>{member.active ? 'Deactivate' : 'Activate'}</button></td></tr>)}</tbody></table></div>
           <div className={styles.twoColumns} style={{ marginTop: 24 }}><section><h3>Add a team member</h3><p className={styles.hint}>Members use one-time email links to sign in. Add the address they will use with Supabase Auth.</p><form className={styles.form} onSubmit={event => {
             event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
-            void action(async () => { await civicApi('/staff/members', { token, method: 'POST', body: { email: data.get('email'), role: data.get('role') } }); form.reset(); await load(); }, 'Team member created');
-          }}><label>Email<input name="email" required type="email" /></label><label>Role<select name="role" required defaultValue="field">{Object.keys(roles).map(role => <option key={role}>{role}</option>)}</select></label><button className={styles.primary} disabled={busy}>Create member</button></form></section>
+            void action(async () => { await civicApi('/staff/members', { token, method: 'POST', body: { display_name: data.get('display_name'), email: data.get('email'), role: data.get('role') } }); form.reset(); await load(); }, 'Team member created');
+          }}><label>Name<input name="display_name" required maxLength={100} autoComplete="name" /></label><label>Email<input name="email" required type="email" /></label><label>Role<select name="role" required defaultValue="field">{Object.keys(roles).map(role => <option key={role}>{role}</option>)}</select></label><button className={styles.primary} disabled={busy}>Create member</button></form></section>
             <section><h3>Organization roles</h3><p className={styles.hint}>Field-only accounts see only their own assignments. Read allows all organization requests. Admin must retain manage and read.</p>
               <form className={styles.form} onSubmit={event => { event.preventDefault(); void action(async () => { await civicApi('/staff/roles', { token, method: 'PUT', body: { roles } }); await load(); }, 'Roles updated'); }}>
                 {Object.entries(roles).map(([role, allowed]) => <fieldset key={role} className={styles.card}><legend>{role}</legend>

@@ -28,7 +28,7 @@ describe("Public organization directory", () => {
 		expect(response.status).toBe(200);
 		expect(response.body).toEqual(organizations);
 		expect(response.headers["cache-control"]).toBe("no-store");
-		expect(rows).toHaveBeenCalledWith("SELECT name, slug FROM civic.portals ORDER BY lower(name), slug");
+		expect(rows).toHaveBeenCalledWith("SELECT name, slug FROM civic.portals WHERE archived_at IS NULL ORDER BY lower(name), slug");
 	});
 
 	it("returns an empty list when no organizations exist", async () => {

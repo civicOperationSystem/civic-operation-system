@@ -10,8 +10,8 @@ import {
 import { getSupabaseUser } from "./supabase-auth";
 import { logger } from "../utils/logger";
 
-type Portal = { id: string; slug: string; name: string; domain: string | null; settings: Settings };
-type Member = { id: string; tenant_id: string; email: string; role: string; active: boolean; supabase_user_id: string | null };
+type Portal = { id: string; slug: string; name: string; domain: string | null; settings: Settings; archived_at: string | null };
+type Member = { id: string; tenant_id: string; email: string; display_name: string; role: string; active: boolean; supabase_user_id: string | null };
 type Context = { member: Member; permissions: Permission[]; portal: Portal; tx: Transaction };
 type Reply = { json: (body: unknown) => void; status: (code: number) => Reply };
 type RecordRow = {
@@ -21,7 +21,7 @@ type RecordRow = {
 	created_at: string; updated_at: string;
 };
 type ChatMessage = {
-	id: string; sender_id: string; sender_email: string; body: string; created_at: string;
+	id: string; sender_id: string; sender_email: string; sender_name: string; body: string; created_at: string;
 };
 type HistoryRow = {
 	id: string; actor: string | null; actor_role: string | null; previous_status: string | null; new_status: string;
@@ -57,7 +57,7 @@ function rateLimit(req: Request, res: Response, next: NextFunction): void {
 
 async function portalBySlug(slug: unknown): Promise<Portal> {
 	const name = text(slug, "organization slug", 60);
-	const [portal] = await rows<Portal>("SELECT * FROM civic.portals WHERE slug = :slug", { slug: name });
+	const [portal] = await rows<Portal>("SELECT * FROM civic.portals WHERE slug = :slug AND archived_at IS NULL", { slug: name });
 	if (!portal) throw new CivicError(404, "Organization not found");
 	return portal;
 }
@@ -109,7 +109,7 @@ function secured(
 		await tenantTransaction(session.tenant, async tx => {
 			const [member] = await rows<Member>("SELECT * FROM civic.members WHERE id = :id AND active", { id: session.subject }, tx);
 			const [config] = await rows<{ roles: Record<string, Permission[]> }>("SELECT roles FROM civic.config", {}, tx);
-			const [portal] = await rows<Portal>("SELECT * FROM civic.portals WHERE id = :id", { id: session.tenant }, tx);
+			const [portal] = await rows<Portal>("SELECT * FROM civic.portals WHERE id = :id AND archived_at IS NULL", { id: session.tenant }, tx);
 			if (!member || !config || !portal) throw new CivicError(401, "Account is no longer active");
 			const allowed = config.roles[member.role] || [];
 			if (permission && !allowed.includes(permission)) throw new CivicError(403, "Permission denied");
@@ -173,12 +173,12 @@ function publicStatus(status: string | null, states: State[]): string {
 
 civicRouter.get("/public/organizations/list", endpoint(async (_req, res) => {
 	res.json(await rows<{ name: string; slug: string }>(
-		"SELECT name, slug FROM civic.portals ORDER BY lower(name), slug"
+		"SELECT name, slug FROM civic.portals WHERE archived_at IS NULL ORDER BY lower(name), slug"
 	));
 }));
 civicRouter.get("/public/portal", endpoint(async (req, res) => {
 	const domain = text(req.query.domain, "domain", 253).toLowerCase();
-	const [portal] = await rows<Portal>("SELECT * FROM civic.portals WHERE domain = :domain", { domain });
+	const [portal] = await rows<Portal>("SELECT * FROM civic.portals WHERE domain = :domain AND archived_at IS NULL", { domain });
 	if (!portal) throw new CivicError(404, "No portal is configured for this domain");
 	res.json(portal);
 }));
@@ -227,13 +227,13 @@ civicRouter.post("/public/:slug/track", rateLimit, endpoint(async (req, res) => 
 	const reference = text(req.body.reference, "tracking reference", 39).toUpperCase();
 	if (!/^[A-F0-9]{4}(?:-[A-F0-9]{4}){7}$/.test(reference)) throw new CivicError(404, "Request not found");
 	const result = await tenantTransaction(portal.id, async tx => {
-		const [record] = await rows<RecordRow>(`SELECT id, category, status, created_at, updated_at FROM civic.records
+		const [record] = await rows<RecordRow>(`SELECT id, title, category, status, created_at, updated_at FROM civic.records
 			WHERE reference = :reference AND kind = 'request'`, { reference }, tx);
 		if (!record) throw new CivicError(404, "Request not found");
 		const history = await rows<{ new_status: string; created_at: string }>(
 			"SELECT new_status, created_at FROM civic.history WHERE request_id = :id ORDER BY created_at, id", { id: record.id }, tx);
 		return {
-			reference, category: record.category, status: publicStatus(record.status, portal.settings.states),
+			reference, title: record.title, category: record.category, status: publicStatus(record.status, portal.settings.states),
 			reported: record.created_at, updated: record.updated_at,
 			history: history.map(event => ({ status: publicStatus(event.new_status, portal.settings.states), timestamp: event.created_at }))
 		};
@@ -289,8 +289,8 @@ civicRouter.post("/platform/login", rateLimit, endpoint(async (req, res) => {
 }));
 civicRouter.get("/platform/organizations", endpoint(async (req, res) => {
 	platformAccessToken(req);
-	const organizations = await rows<Pick<Portal, "id" | "slug" | "name" | "domain">>(
-		"SELECT id, slug, name, domain FROM civic.portals ORDER BY name, slug");
+	const organizations = await rows<Pick<Portal, "id" | "slug" | "name" | "domain" | "archived_at">>(
+		"SELECT id, slug, name, domain, archived_at FROM civic.portals ORDER BY archived_at NULLS FIRST, name, slug");
 	res.setHeader("Cache-Control", "no-store");
 	res.json(organizations);
 }));
@@ -312,12 +312,43 @@ civicRouter.post("/platform/organizations", rateLimit, endpoint(async (req, res)
 			{ id, slug, domain, name, settings: JSON.stringify(defaultSettings) }, tx);
 		await rows("INSERT INTO civic.config(tenant_id, roles) VALUES (:id, CAST(:roles AS jsonb))",
 			{ id, roles: JSON.stringify(defaultRoles) }, tx);
-		await rows("INSERT INTO civic.members(id, tenant_id, email, role) VALUES (:admin, :id, :email, 'admin')",
+		await rows(`INSERT INTO civic.members(id, tenant_id, email, display_name, role)
+			VALUES (:admin, :id, :email, initcap(replace(replace(split_part(:email, '@', 1), '.', ' '), '_', ' ')), 'admin')`,
 			{ admin: adminId, id, email }, tx);
 		await rows("INSERT INTO civic.chat_channels(id, tenant_id, name, description) VALUES (:channel, :id, 'general', 'Organization-wide staff chat')",
 			{ channel: randomUUID(), id }, tx);
 	}, undefined, true);
 	res.status(201).json({ organization: { id, slug, name, domain, admin_email: email } });
+}));
+civicRouter.put("/platform/organizations/:id/archive", endpoint(async (req, res) => {
+	platformAccessToken(req);
+	const id = identifier(req.params.id);
+	if (typeof req.body.archived !== "boolean") throw new CivicError(400, "Invalid archive status");
+	const [organization] = await tenantTransaction(id, tx => rows<Pick<Portal, "id" | "archived_at">>(
+		"UPDATE civic.portals SET archived_at = CASE WHEN :archived THEN now() ELSE NULL END WHERE id = :id RETURNING id, archived_at",
+		{ id, archived: req.body.archived }, tx
+	), undefined, true);
+	if (!organization) throw new CivicError(404, "Organization not found");
+	res.json(organization);
+}));
+civicRouter.delete("/platform/organizations/:id", endpoint(async (req, res) => {
+	platformAccessToken(req);
+	const id = identifier(req.params.id);
+	await tenantTransaction(id, async tx => {
+		const [organization] = await rows<Pick<Portal, "id" | "archived_at">>(
+			"SELECT id, archived_at FROM civic.portals WHERE id = :id FOR UPDATE", { id }, tx);
+		if (!organization) throw new CivicError(404, "Organization not found");
+		if (!organization.archived_at) throw new CivicError(409, "Archive the organization before permanently removing it");
+		await rows("DELETE FROM civic.chat_messages WHERE tenant_id = :id", { id }, tx);
+		await rows("DELETE FROM civic.chat_direct_threads WHERE tenant_id = :id", { id }, tx);
+		await rows("DELETE FROM civic.chat_channels WHERE tenant_id = :id", { id }, tx);
+		await rows("DELETE FROM civic.history WHERE tenant_id = :id", { id }, tx);
+		await rows("DELETE FROM civic.records WHERE tenant_id = :id", { id }, tx);
+		await rows("DELETE FROM civic.members WHERE tenant_id = :id", { id }, tx);
+		await rows("DELETE FROM civic.config WHERE tenant_id = :id", { id }, tx);
+		await rows("DELETE FROM civic.portals WHERE id = :id", { id }, tx);
+	}, undefined, true);
+	res.json({ removed: true });
 }));
 secured("get", "/staff/me", null, async (_req, res, context) => {
 	res.json({
@@ -330,8 +361,9 @@ secured("get", "/staff/requests", null, async (req, res, context) => {
 	const page = Number(req.query.page || 1);
 	if (!Number.isInteger(page) || page < 1 || page > 100000) throw new CivicError(400, "Invalid page");
 	const archived = req.query.archived === "true";
-	if (archived && !context.permissions.includes("manage")) throw new CivicError(403, "Permission denied");
-	res.json(await rows(`SELECT ${staffColumns} FROM civic.records WHERE kind = 'request' AND archived_at IS ${archived ? "NOT " : ""}NULL${scope(context)}
+	const includeArchived = req.query.archived === "all";
+	if ((archived || includeArchived) && !context.permissions.includes("manage")) throw new CivicError(403, "Permission denied");
+	res.json(await rows(`SELECT ${staffColumns} FROM civic.records WHERE kind = 'request'${includeArchived ? "" : ` AND archived_at IS ${archived ? "NOT " : ""}NULL`}${scope(context)}
 		ORDER BY created_at DESC LIMIT 100 OFFSET :offset`,
 		{ actor: context.member.id, offset: (page - 1) * 100 }, context.tx));
 });
@@ -349,7 +381,8 @@ secured("post", "/staff/requests/:id/transition", "transition", async (req, res,
 	const notes = text(req.body.notes || "", "notes", 5000, false);
 	const visibility = noteVisibility(req.body.note_visibility, context);
 	const state = context.portal.settings.states.find(item => item.key === record.status);
-	if (!state?.next.includes(next)) throw new CivicError(409, "This workflow transition is not allowed");
+	const reversing = context.portal.settings.states.some(item => item.key === next && item.next.includes(record.status || ""));
+	if (!state || (!state.next.includes(next) && !reversing)) throw new CivicError(409, "This workflow transition is not allowed");
 	const target = context.portal.settings.states.find(item => item.key === next);
 	if (!context.permissions.includes("read") && (!target || !fieldCanEnter(target))) {
 		throw new CivicError(403, "Field workers cannot enter this workflow state");
@@ -403,7 +436,7 @@ secured("post", "/staff/requests/:id/visibility", "publish", async (req, res, co
 	res.json({ published: req.body.published });
 });
 secured("get", "/staff/members", "read", async (_req, res, context) => {
-	res.json(await rows("SELECT id, email, role, active FROM civic.members ORDER BY email", {}, context.tx));
+	res.json(await rows("SELECT id, email, display_name, role, active FROM civic.members ORDER BY lower(display_name), email", {}, context.tx));
 });
 secured("get", "/staff/roles", "manage", async (_req, res, context) => {
 	const [config] = await rows("SELECT roles FROM civic.config", {}, context.tx);
@@ -430,24 +463,28 @@ secured("put", "/staff/roles", "manage", async (req, res, context) => {
 secured("post", "/staff/members", "manage", async (req, res, context) => {
 	const email = text(req.body.email, "email", 254).toLowerCase();
 	if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new CivicError(400, "Invalid email");
+	const displayName = text(req.body.display_name, "member name", 100);
 	const role = text(req.body.role, "role", 40);
 	const [config] = await rows<{ roles: Record<string, Permission[]> }>("SELECT roles FROM civic.config FOR SHARE", {}, context.tx);
 	if (!config?.roles[role]) throw new CivicError(400, "Unknown role");
-	const result = await rows(`INSERT INTO civic.members(id, tenant_id, email, role)
-		VALUES (:id, :tenant, :email, :role) RETURNING id, email, role, active`, {
-		id: randomUUID(), tenant: context.portal.id, email, role
+	const result = await rows(`INSERT INTO civic.members(id, tenant_id, email, display_name, role)
+		VALUES (:id, :tenant, :email, :displayName, :role) RETURNING id, email, display_name, role, active`, {
+		id: randomUUID(), tenant: context.portal.id, email, displayName, role
 	}, context.tx);
 	res.status(201).json(result[0]);
 });
 secured("put", "/staff/members/:id", "manage", async (req, res, context) => {
 	const id = identifier(req.params.id);
-	if (id === context.member.id) throw new CivicError(400, "Use another administrator to change your own access");
+	const displayName = text(req.body.display_name, "member name", 100);
 	const role = text(req.body.role, "role", 40);
 	if (typeof req.body.active !== "boolean") throw new CivicError(400, "Invalid account status");
+	if (id === context.member.id && (role !== context.member.role || !req.body.active)) {
+		throw new CivicError(400, "Use another administrator to change your own access");
+	}
 	const [config] = await rows<{ roles: Record<string, Permission[]> }>("SELECT roles FROM civic.config FOR SHARE", {}, context.tx);
 	if (!config?.roles[role]) throw new CivicError(400, "Unknown role");
-	const result = await rows("UPDATE civic.members SET role = :role, active = :active WHERE id = :id RETURNING id, email, role, active",
-		{ id, role, active: req.body.active }, context.tx);
+	const result = await rows("UPDATE civic.members SET display_name = :displayName, role = :role, active = :active WHERE id = :id RETURNING id, email, display_name, role, active",
+		{ id, displayName, role, active: req.body.active }, context.tx);
 	if (!result.length) throw new CivicError(404, "Member not found");
 	res.json(result[0]);
 });
@@ -536,15 +573,17 @@ async function postChatMessage(
 		sender: context.member.id, body: message
 	}, context.tx);
 	res.status(201).json({
-		...result[0], sender_email: context.member.email
+		...result[0],
+		sender_email: context.member.email,
+		sender_name: context.member.display_name || context.member.email
 	});
 }
 secured("get", "/staff/chat/contacts", "chat", async (_req, res, context) => {
-	res.json(await rows(`SELECT member.id, member.email, member.role FROM civic.members member
+	res.json(await rows(`SELECT member.id, member.email, COALESCE(NULLIF(member.display_name, ''), member.email) AS display_name, member.role FROM civic.members member
 		JOIN civic.config tenant_config ON tenant_config.tenant_id = member.tenant_id
 		WHERE member.active AND member.id <> :actor
 		AND (tenant_config.roles -> member.role) @> '[\"chat\"]'::jsonb
-		ORDER BY member.email`, { actor: context.member.id }, context.tx));
+		ORDER BY lower(member.display_name), member.email`, { actor: context.member.id }, context.tx));
 });
 secured("get", "/staff/chat/channels", "chat", async (_req, res, context) => {
 	res.json(await rows("SELECT id, name, description, created_at FROM civic.chat_channels ORDER BY name", {}, context.tx));
@@ -565,6 +604,7 @@ secured("post", "/staff/chat/channels", "chat", async (req, res, context) => {
 }, rateLimit);
 secured("get", "/staff/chat/direct", "chat", async (_req, res, context) => {
 	res.json(await rows(`SELECT thread.id, counterpart.id AS member_id, counterpart.email AS member_email,
+		COALESCE(NULLIF(counterpart.display_name, ''), counterpart.email) AS member_name,
 		last_message.body AS last_message, last_message.created_at AS updated_at
 		FROM civic.chat_direct_threads thread
 		JOIN civic.members counterpart ON counterpart.tenant_id = thread.tenant_id
@@ -575,7 +615,7 @@ secured("get", "/staff/chat/direct", "chat", async (_req, res, context) => {
 			ORDER BY message.created_at DESC, message.id DESC LIMIT 1
 		) last_message ON true
 		WHERE :actor IN (thread.member_low, thread.member_high)
-		ORDER BY last_message.created_at DESC NULLS LAST, counterpart.email`, {
+		ORDER BY last_message.created_at DESC NULLS LAST, lower(counterpart.display_name), counterpart.email`, {
 		actor: context.member.id
 	}, context.tx));
 });
@@ -605,7 +645,8 @@ async function chatMessages(
 	req: Request, context: Context, target: { channel?: string; thread?: string }
 ): Promise<ChatMessage[]> {
 	const cursor = chatCursor(req);
-	return rows<ChatMessage>(`SELECT message.id, message.sender_id, sender.email AS sender_email, message.body,
+	return rows<ChatMessage>(`SELECT message.id, message.sender_id, sender.email AS sender_email,
+			COALESCE(NULLIF(sender.display_name, ''), sender.email) AS sender_name, message.body,
 			to_char(message.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at
 		FROM civic.chat_messages message
 		JOIN civic.members sender ON sender.tenant_id = message.tenant_id AND sender.id = message.sender_id

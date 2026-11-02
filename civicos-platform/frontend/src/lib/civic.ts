@@ -8,7 +8,7 @@ export type Settings = {
   anonymous: boolean; center: [number, number]; states: WorkflowState[];
 };
 export type Portal = { id: string; slug: string; name: string; domain: string | null; settings: Settings };
-export type Member = { id: string; email: string; role: string; active: boolean };
+export type Member = { id: string; email: string; display_name: string; role: string; active: boolean };
 export type Session = { user: Member; permissions: string[]; portal: Portal };
 export type CivicRecord = {
   id: string; kind: string; title: string; description: string; location: string;
@@ -25,7 +25,7 @@ export type RequestDetail = CivicRecord & {
   photo: string | null; history: History[];
 };
 export type Tracking = {
-  reference: string; category: string; status: string; reported: string; updated: string;
+  reference: string; title: string; category: string; status: string; reported: string; updated: string;
   history: { status: string; timestamp: string }[];
 };
 export async function civicApi<T>(path: string, options: { token?: string; method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {

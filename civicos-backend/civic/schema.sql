@@ -5,8 +5,10 @@ CREATE TABLE IF NOT EXISTS civic.portals (
   slug text NOT NULL UNIQUE CHECK (slug ~ '^[a-z0-9-]{3,60}$'),
   domain text UNIQUE,
   name text NOT NULL,
-  settings jsonb NOT NULL
+  settings jsonb NOT NULL,
+  archived_at timestamptz
 );
+ALTER TABLE civic.portals ADD COLUMN IF NOT EXISTS archived_at timestamptz;
 CREATE TABLE IF NOT EXISTS civic.config (
   tenant_id uuid PRIMARY KEY REFERENCES civic.portals(id),
   roles jsonb NOT NULL
@@ -15,6 +17,7 @@ CREATE TABLE IF NOT EXISTS civic.members (
   id uuid PRIMARY KEY,
   tenant_id uuid NOT NULL REFERENCES civic.portals(id),
   email text NOT NULL,
+  display_name text NOT NULL DEFAULT '',
   password_hash text,
   supabase_user_id uuid,
   role text NOT NULL,
@@ -24,6 +27,10 @@ CREATE TABLE IF NOT EXISTS civic.members (
 );
 ALTER TABLE civic.members ALTER COLUMN password_hash DROP NOT NULL;
 ALTER TABLE civic.members ADD COLUMN IF NOT EXISTS supabase_user_id uuid;
+ALTER TABLE civic.members ADD COLUMN IF NOT EXISTS display_name text NOT NULL DEFAULT '';
+UPDATE civic.members
+  SET display_name = initcap(replace(replace(split_part(email, '@', 1), '.', ' '), '_', ' '))
+  WHERE display_name = '';
 UPDATE civic.members SET password_hash = NULL WHERE password_hash IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS civic_members_supabase_user
   ON civic.members(tenant_id, supabase_user_id) WHERE supabase_user_id IS NOT NULL;
@@ -151,6 +158,10 @@ CREATE POLICY portal_update ON civic.portals FOR UPDATE
 DROP POLICY IF EXISTS portal_platform_insert ON civic.portals;
 CREATE POLICY portal_platform_insert ON civic.portals FOR INSERT
   WITH CHECK (current_setting('civic.platform_admin', true) = 'true');
+DROP POLICY IF EXISTS portal_platform_delete ON civic.portals;
+CREATE POLICY portal_platform_delete ON civic.portals FOR DELETE
+  USING (id::text = current_setting('civic.tenant', true)
+    AND current_setting('civic.platform_admin', true) = 'true');
 
 DO $$
 DECLARE t text;
@@ -167,28 +178,32 @@ END $$;
 DROP POLICY IF EXISTS chat_thread_participant ON civic.chat_direct_threads;
 DROP POLICY IF EXISTS tenant_isolation ON civic.chat_direct_threads;
 CREATE POLICY chat_thread_participant ON civic.chat_direct_threads FOR ALL
-  USING (tenant_id::text = current_setting('civic.tenant', true)
-    AND current_setting('civic.member', true) IN (member_low::text, member_high::text))
+  USING (tenant_id::text = current_setting('civic.tenant', true) AND (
+    current_setting('civic.platform_admin', true) = 'true'
+    OR current_setting('civic.member', true) IN (member_low::text, member_high::text)))
   WITH CHECK (tenant_id::text = current_setting('civic.tenant', true)
-    AND current_setting('civic.member', true) IN (member_low::text, member_high::text));
+    AND (current_setting('civic.platform_admin', true) = 'true'
+      OR current_setting('civic.member', true) IN (member_low::text, member_high::text)));
 DROP POLICY IF EXISTS chat_message_access ON civic.chat_messages;
 DROP POLICY IF EXISTS tenant_isolation ON civic.chat_messages;
 CREATE POLICY chat_message_access ON civic.chat_messages FOR ALL
-  USING (tenant_id::text = current_setting('civic.tenant', true)
-    AND (channel_id IS NOT NULL OR EXISTS (
+  USING (tenant_id::text = current_setting('civic.tenant', true) AND (
+    current_setting('civic.platform_admin', true) = 'true'
+    OR (channel_id IS NOT NULL OR EXISTS (
       SELECT 1 FROM civic.chat_direct_threads thread
       WHERE thread.tenant_id = chat_messages.tenant_id
         AND thread.id = chat_messages.direct_thread_id
         AND current_setting('civic.member', true) IN (thread.member_low::text, thread.member_high::text)
-    )))
+    ))))
   WITH CHECK (tenant_id::text = current_setting('civic.tenant', true)
-    AND sender_id::text = current_setting('civic.member', true)
-    AND (channel_id IS NOT NULL OR EXISTS (
+    AND (current_setting('civic.platform_admin', true) = 'true' OR (
+      sender_id::text = current_setting('civic.member', true)
+      AND (channel_id IS NOT NULL OR EXISTS (
       SELECT 1 FROM civic.chat_direct_threads thread
       WHERE thread.tenant_id = chat_messages.tenant_id
         AND thread.id = chat_messages.direct_thread_id
         AND current_setting('civic.member', true) IN (thread.member_low::text, thread.member_high::text)
-    )));
+    )))));
 
 GRANT USAGE ON SCHEMA civic TO civic_app;
 GRANT SELECT, INSERT, UPDATE ON civic.portals TO civic_app;
@@ -196,3 +211,5 @@ GRANT SELECT, INSERT, UPDATE ON civic.config, civic.members, civic.records TO ci
 GRANT SELECT, INSERT ON civic.history TO civic_app;
 GRANT SELECT, INSERT ON civic.chat_channels, civic.chat_direct_threads, civic.chat_messages TO civic_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON civic.history FROM civic_app;
+GRANT DELETE ON civic.portals, civic.config, civic.members, civic.records, civic.history,
+  civic.chat_channels, civic.chat_direct_threads, civic.chat_messages TO civic_app;

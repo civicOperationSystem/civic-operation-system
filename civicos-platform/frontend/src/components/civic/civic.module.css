@@ -104,6 +104,13 @@
 .requestColumn .card strong { font-size:14px; }
 .requestColumn .card p { margin:0; font-size:12px; }
 .requestColumn .card small { margin-top:0; font-size:10px; }
+.calendar { display:grid; grid-template-columns:repeat(7,minmax(120px,1fr)); gap:1px; margin-top:18px; overflow-x:auto; background:#dfe7ea; border:1px solid #dfe7ea; }
+.calendar>strong { min-width:120px; padding:9px; background:#edf2f4; color:#5f747d; font-size:11px; text-align:center; }
+.calendarDay { display:flex; min-width:120px; min-height:130px; flex-direction:column; gap:6px; padding:8px; background:#fff; }
+.calendarDay time { color:#58717b; font-size:11px; font-weight:700; }
+.calendarDay button { padding:6px; border:1px solid #dbece6; border-radius:6px; background:#edf6f3; color:#176f64; font-size:11px; text-align:left; overflow-wrap:anywhere; }
+.calendarDay button small { display:block; margin-top:3px; color:#58717b; font-size:9px; }
+.calendarMuted { background:#f7f9fa; color:#a0b0b5; }
 .chatLayout { min-height:560px; height:min(72vh,820px); display:grid; grid-template-columns:270px minmax(0,1fr); border:1px solid #dfe7ea; border-radius:12px; overflow:hidden; background:#fff; }
 .chatSidebar { display:flex; flex-direction:column; min-height:0; gap:10px; padding:18px; border-right:1px solid #e4ebee; overflow-y:auto; }
 .chatSidebar h3 { margin:10px 0 0; font-size:12px; }

@@ -51,8 +51,8 @@ async function main(): Promise<void> {
 			await db.query("INSERT INTO civic.config VALUES (:id, CAST(:roles AS jsonb))", {
 				replacements: { id, roles: JSON.stringify(defaultRoles) }, transaction
 			});
-			await db.query(`INSERT INTO civic.members(id, tenant_id, email, role)
-				VALUES (:member, :id, :email, 'admin')`, {
+			await db.query(`INSERT INTO civic.members(id, tenant_id, email, display_name, role)
+				VALUES (:member, :id, :email, initcap(replace(replace(split_part(:email, '@', 1), '.', ' '), '_', ' ')), 'admin')`, {
 				replacements: { member: randomUUID(), id, email: email!.toLowerCase() }, transaction
 			});
 		});

@@ -160,7 +160,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
           </form></section><aside><h3>Pin the location</h3><p className={styles.hint}>Click on the map to add coordinates. Contact details and photos are never published.</p><MapEmbed portal={portal} onPoint={setPoint} /></aside></div>}
         {view === 'track' && <section className={styles.narrow}><p className={styles.eyebrow}>FOLLOW THE PROGRESS</p><h2>Track your request</h2><p className={styles.hint}>Use the private reference you received when submitting your report.</p>
           <form onSubmit={track} className={styles.form}><label>Tracking reference<input value={reference} onChange={event => setReference(event.target.value)} placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" required maxLength={39} autoComplete="off" /></label><button disabled={busy} className={styles.primary}>Check status</button></form>
-          {tracked && <article className={styles.card}><span className={styles.tag}>{tracked.status}</span><h3>{tracked.category}</h3><p>Reported {displayDate(tracked.reported, portal.settings)}</p><p>Updated {displayDate(tracked.updated, portal.settings)}</p>
+          {tracked && <article className={styles.card}><span className={styles.tag}>{tracked.status}</span><h3>{tracked.title}</h3><p>{tracked.category}</p><p>Reported {displayDate(tracked.reported, portal.settings)}</p><p>Updated {displayDate(tracked.updated, portal.settings)}</p>
             <ol className={styles.timeline}>{tracked.history.map((event, index) => <li key={index}><strong>{event.status}</strong><small>{displayDate(event.timestamp, portal.settings)}</small></li>)}</ol></article>}
         </section>}
       </div>
