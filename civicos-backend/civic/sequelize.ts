@@ -1,3 +1,4 @@
+import "pg";
 import { Sequelize } from "sequelize";
 
 type ConnectionOptions = {
