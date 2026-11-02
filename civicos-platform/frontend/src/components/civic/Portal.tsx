@@ -22,6 +22,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [content, setContent] = useState<CivicRecord[]>([]);
   const [calendarRequests, setCalendarRequests] = useState<PublicCalendarRequest[]>([]);
   const [publicRequestDetail, setPublicRequestDetail] = useState<PublicRequestDetail | null>(null);
+  const [publicContentDetail, setPublicContentDetail] = useState<CivicRecord | null>(null);
   const [view, setView] = useState('overview');
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [kind, setKind] = useState('all');
@@ -40,7 +41,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         civicApi<PublicCalendarRequest[]>(`/public/${org.slug}/requests/calendar`),
       ]);
       setPortal(org); setSlug(org.slug); setContent(records); setCalendarRequests(requests); setAnonymous(org.settings.anonymous);
-      setSubmitted(''); setPublicRequestDetail(null); setPoint(null);
+      setSubmitted(''); setPublicRequestDetail(null); setPublicContentDetail(null); setPoint(null);
       document.documentElement.lang = org.settings.language;
       document.title = `${org.name} | CivicOS`;
     } catch (failure) { setPortal(null); setError(failure instanceof Error ? failure.message : 'Could not load portal'); }
@@ -157,12 +158,12 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         {view === 'overview' && <>
           <div className={styles.sectionTitle}><div><p className={styles.eyebrow}>WHAT'S HAPPENING</p><h2>Your community hub</h2></div>
             <label>Show<select value={kind} onChange={event => setKind(event.target.value)}>{kinds.map(type => <option key={type} value={type}>{type === 'all' ? 'All information' : type}</option>)}</select></label></div>
-          <div className={styles.hubGroups}>{hubGroups.map(group => <section key={group.key}><h3>{group.label}</h3><div className={styles.cards}>{group.items.map(item => <article className={styles.card} key={item.id}>
+          <div className={styles.hubGroups}>{hubGroups.map(group => <section key={group.key}><h3>{group.label}</h3><div className={styles.cards}>{group.items.map(item => <button type="button" className={styles.card} key={item.id} onClick={() => setPublicContentDetail(item)}>
             <span className={styles.tag}>{item.kind}</span><h3>{item.title}</h3><p>{item.description}</p>
             <small>Published {displayDate(item.created_at, portal.settings)}</small>
             {item.location && <small>{item.location}</small>}
-            {item.url && <a href={item.url} target="_blank" rel="noopener noreferrer">Open document or information ↗</a>}
-          </article>)}</div></section>)}</div>
+            <span className={styles.openDetails}>Open details</span>
+          </button>)}</div></section>)}</div>
           {!content.length && <div className={styles.empty}><h3>Your community hub is ready.</h3><p>Published services, events, facilities and announcements will appear here.</p></div>}
           {!!calendarRequests.length && <section className={styles.publicTickets}><h3>Published community work</h3><div className={styles.cards}>{calendarRequests.map(record => <button key={record.id} className={styles.card} onClick={() => void selectPublicRequest(record.id)}><span className={styles.tag}>{record.status}</span><strong>{record.title}</strong><small>{record.category || 'Community request'}</small>{record.completed_at && <small>Completed {displayDate(record.completed_at, portal.settings)}</small>}<span>Open ticket details</span></button>)}</div></section>}
           <section className={styles.contact}><h3>Here to help</h3><p>{settings?.contact || 'Contact your community staff through the service request form.'}</p>
@@ -213,6 +214,16 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             <aside><h3>Public location</h3><p>{publicRequestDetail.location || 'Location details are not available.'}</p>{publicRequestDetail.longitude !== null && publicRequestDetail.latitude !== null ?
               <MapEmbed portal={portal} center={[publicRequestDetail.longitude, publicRequestDetail.latitude]} zoom={16} onSelect={id => void selectPublicRequest(id)} /> :
               <p className={styles.hint}>A map location was not provided for this ticket.</p>}</aside></div>
+        </section>
+      </div>}
+      {publicContentDetail && <div className={styles.modalBackdrop} role="presentation">
+        <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="public-content-title">
+          <div className={styles.sectionTitle}><div><span className={styles.tag}>{publicContentDetail.kind}</span><h2 id="public-content-title">{publicContentDetail.title}</h2></div><button className={styles.secondary} onClick={() => setPublicContentDetail(null)}>Close</button></div>
+          <div className={styles.ticketModalLayout}><div><p>{publicContentDetail.description}</p><p>Published {displayDate(publicContentDetail.created_at, portal.settings)}</p>{publicContentDetail.location && <p>Location: {publicContentDetail.location}</p>}
+            {publicContentDetail.url && <a className={styles.primary} href={publicContentDetail.url} target="_blank" rel="noopener noreferrer">Open document or information ↗</a>}</div>
+            <aside><h3>Location</h3>{publicContentDetail.longitude !== null && publicContentDetail.latitude !== null ?
+              <MapEmbed portal={portal} center={[publicContentDetail.longitude, publicContentDetail.latitude]} zoom={16} /> :
+              <p className={styles.hint}>A map location was not provided for this information.</p>}</aside></div>
         </section>
       </div>}
     </>}
