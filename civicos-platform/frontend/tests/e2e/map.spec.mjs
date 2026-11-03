@@ -61,6 +61,7 @@ test('bottom administrator chooses and saves the community map view for embedded
   await expect(latitude).toHaveValue(String(center[1]));
   await expect(zoom).toHaveValue('12');
   await page.getByRole('button', { name: 'Community map', exact: true }).click();
+  await page.getByRole('button', { name: 'Enable map interaction', exact: true }).click();
   await waitForMap(iframe);
   await expect(map.getByLabel('Current map view')).toHaveText(expectedView);
   await page.goto(`/portal/${slug}`);
