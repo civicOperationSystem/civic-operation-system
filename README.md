@@ -173,11 +173,12 @@ Domain registration and TLS certificate issuance are deployment responsibilities
 - Organization name, logo, branding, timezone, locale, locations, departments, services, categories, users and configurable roles.
 - Supabase one-time email sign-in for staff and field workers, with verified identities linked to organization-scoped CivicOS memberships.
 - Account-free published services, announcements, events, projects, facilities, HTTPS document links, emergency notices and contact information.
+- Public portal Refresh reloads community information, public requests and the community map without clearing an unfinished report or changing the selected tab.
 - Resident requests with descriptions, locations, coordinates, up to three optional PNG/JPEG/WebP photos (2 MiB each), contact details, and organization-controlled anonymous reporting. Field workers can add up to three photos (5 MiB each). Resident photos are public after review; field photos appear publicly only while the request is in the `verified` state.
 - Existing deployments must run the schema migration in [Updating an existing deployment](#updating-an-existing-deployment) before deploying the six-photo limit; otherwise the previous three-photo database constraint remains in effect.
 - Archiving removes a request permanently from staff and field workspaces while retaining its public ticket, map marker, and status history.
 - Cryptographically random 128-bit tracking references. Tracking uses a POST body and exposes only category, public status and dates; not staff names, notes, contacts, assignments or photos.
-- Configurable workflow states and allowed transitions. Every submission, assignment and transition stores an immutable actor/status/timestamp/notes record.
+- Configurable workflow states and allowed transitions. Every submission, assignment and transition stores an immutable actor/status/timestamp/notes record. Tenant sessions cannot update or delete audit history; only permanent organization removal by the platform owner deletes it.
 - Assigned field workers can enter only field-enabled states. Staff alone perform review and verification by default. Disabled accounts lose access on their next API request.
 - Publishing and editing community information, member role changes, activation/deactivation and explicit public request-map visibility.
 - Authorized GIS layers, clustered points, search, status/type filters, zoom-to-results, resident pin selection and an accessible location list.

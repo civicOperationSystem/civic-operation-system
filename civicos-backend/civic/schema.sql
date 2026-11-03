@@ -201,6 +201,10 @@ BEGIN
   END LOOP;
 END $$;
 
+DROP POLICY IF EXISTS history_platform_delete ON civic.history;
+CREATE POLICY history_platform_delete ON civic.history AS RESTRICTIVE FOR DELETE
+  USING (current_setting('civic.platform_admin', true) = 'true');
+
 DROP POLICY IF EXISTS chat_thread_participant ON civic.chat_direct_threads;
 DROP POLICY IF EXISTS tenant_isolation ON civic.chat_direct_threads;
 CREATE POLICY chat_thread_participant ON civic.chat_direct_threads FOR ALL

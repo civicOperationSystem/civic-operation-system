@@ -29,12 +29,14 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [kind, setKind] = useState('all');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [refreshNotice, setRefreshNotice] = useState('');
+  const [revision, setRevision] = useState(0);
   const [point, setPoint] = useState<[number, number] | null>(null);
   const [mapFocus, setMapFocus] = useState<{ title: string; point: [number, number] } | null>(null);
   const [submitted, setSubmitted] = useState('');
   const [anonymous, setAnonymous] = useState(true);
-  async function load(nextSlug?: string) {
-    setError(''); setBusy(true);
+  async function load(nextSlug?: string, refresh = false) {
+    setError(''); setRefreshNotice(''); setBusy(true);
     try {
       const org = nextSlug ? await civicApi<PortalData>(`/public/${encodeURIComponent(nextSlug)}`) :
         await civicApi<PortalData>(`/public/portal?domain=${encodeURIComponent(window.location.hostname)}`);
@@ -42,11 +44,20 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         civicApi<CivicRecord[]>(`/public/${org.slug}/content`),
         civicApi<PublicCalendarRequest[]>(`/public/${org.slug}/requests/calendar`),
       ]);
-      setPortal(org); setSlug(org.slug); setContent(records); setCalendarRequests(requests); setAnonymous(org.settings.anonymous);
-      setSubmitted(''); setPublicRequestDetail(null); setPublicContentDetail(null); setPoint(null); setMapFocus(null);
+      setPortal(org); setSlug(org.slug); setContent(records); setCalendarRequests(requests);
+      if (refresh) {
+        setRevision(value => value + 1);
+        setRefreshNotice('Portal refreshed.');
+      } else {
+        setAnonymous(org.settings.anonymous);
+        setSubmitted(''); setPublicRequestDetail(null); setPublicContentDetail(null); setPoint(null); setMapFocus(null);
+      }
       document.documentElement.lang = org.settings.language;
       document.title = `${org.name} | CivicOS`;
-    } catch (failure) { setPortal(null); setError(failure instanceof Error ? failure.message : 'Could not load portal'); }
+    } catch (failure) {
+      if (!refresh) setPortal(null);
+      setError(failure instanceof Error ? failure.message : 'Could not load portal');
+    }
     finally { setBusy(false); }
   }
   useEffect(() => { void load(initialSlug || new URLSearchParams(window.location.search).get('org') || undefined); }, [initialSlug]);
@@ -155,7 +166,9 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
           <div className={styles.organization}>{settings?.logo && <img src={settings.logo} alt="" width={48} height={48} />}<h1>{portal.name}</h1></div>
           <p>Local information and everyday services, all in one place.<br />No account needed. Everyone welcome.</p>
           <div className={styles.inline}><button className={styles.primary} onClick={() => setView('report')}>Report a problem <span aria-hidden>↗</span></button>
+            <button type="button" className={styles.secondary} disabled={busy} onClick={() => void load(portal.slug, true)}>Refresh</button>
             </div>
+          {refreshNotice && <p role="status">{refreshNotice}</p>}
         </div>
         <aside className={styles.heroAside}><span className={styles.pulse} /> Open, local, accountable<p>One platform for residents,<br />staff, and field teams.</p><strong>{settings?.departments.length} departments · {settings?.services.length} services</strong></aside>
       </section>
@@ -183,7 +196,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         </>}
         {view === 'map' && <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>EXPLORE YOUR COMMUNITY</p><h2>Places, infrastructure & public work</h2></div></div>
           {mapFocus && <div className={styles.inline} role="status"><p className={styles.hint}>Showing <strong>{mapFocus.title}</strong> on the map.</p><button type="button" className={styles.secondary} onClick={() => setMapFocus(null)}>Show the whole community</button></div>}
-          <p className={styles.hint}>This map is read-only by default. Use the zoom controls to inspect an area, or enable interaction to browse public locations and open a request.</p><MapEmbed portal={portal} locked center={mapFocus?.point} marker={mapFocus?.point} zoom={mapFocus ? 16 : undefined} onSelect={id => void selectPublicRequest(id)} />
+          <p className={styles.hint}>This map is read-only by default. Use the zoom controls to inspect an area, or enable interaction to browse public locations and open a request.</p><MapEmbed portal={portal} revision={revision} locked center={mapFocus?.point} marker={mapFocus?.point} zoom={mapFocus ? 16 : undefined} onSelect={id => void selectPublicRequest(id)} />
           {error && <p role="alert" className={styles.error}>{error}</p>}
           <section className={styles.publicTickets}><h3>Public request tickets</h3>{!calendarRequests.length ? <p className={styles.hint}>There are no public request tickets yet.</p> :
             <div className={styles.cards}>{calendarRequests.map(record => <button key={record.id} className={styles.card} onClick={() => void selectPublicRequest(record.id)}><span className={styles.tag}>{record.status}</span><strong>{record.title}</strong><small>{record.category || 'Community request'}</small><span>View public ticket details</span></button>)}</div>}

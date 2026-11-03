@@ -100,6 +100,8 @@ afterAll(async () => {
 	if (createdPlatformTenant) {
 		await owner.query("DELETE FROM civic.chat_messages WHERE tenant_id = :tenant", { replacements: { tenant: createdPlatformTenant } });
 		await owner.query("DELETE FROM civic.chat_channels WHERE tenant_id = :tenant", { replacements: { tenant: createdPlatformTenant } });
+		await owner.query("DELETE FROM civic.history WHERE tenant_id = :tenant", { replacements: { tenant: createdPlatformTenant } });
+		await owner.query("DELETE FROM civic.records WHERE tenant_id = :tenant", { replacements: { tenant: createdPlatformTenant } });
 		await owner.query("DELETE FROM civic.members WHERE tenant_id = :tenant", { replacements: { tenant: createdPlatformTenant } });
 		await owner.query("DELETE FROM civic.config WHERE tenant_id = :tenant", { replacements: { tenant: createdPlatformTenant } });
 		await owner.query("DELETE FROM civic.portals WHERE id = :tenant", { replacements: { tenant: createdPlatformTenant } });
@@ -142,7 +144,7 @@ describe("CivicOS identity and database isolation", () => {
 		const bottomToken = await login(organizationSlug, "bottom@example.org");
 		expect((await api("get", "/staff/me", bottomToken)).body.portal.slug).toBe(organizationSlug);
 		const addStaff = await api("post", "/staff/members", bottomToken)
-			.send({ email: "worker@managed.example.org", role: "field" });
+			.send({ email: "worker@managed.example.org", display_name: "Managed Worker", role: "field" });
 		expect(addStaff.status).toBe(201);
 		expect(addStaff.body.role).toBe("field");
 		const [worker] = await owner.query<{ tenant_id: string }>(
@@ -158,6 +160,45 @@ describe("CivicOS identity and database isolation", () => {
 		const unauthorizedAccess = `verified-${randomUUID()}`;
 		identities.set(unauthorizedAccess, { id: randomUUID(), email: "not-owner@example.org" });
 		expect((await request(app).post("/api/civic/platform/login").send({ access_token: unauthorizedAccess })).status).toBe(401);
+	});
+
+	it("allows only the platform owner to purge audit history when removing an archived organization", async () => {
+		const id = createdPlatformTenant;
+		if (!id) throw new Error("Managed organization fixture is missing");
+		const [organization] = await database.rows<{ slug: string }>(
+			"SELECT slug FROM civic.portals WHERE id = :id", { id });
+		if (!organization) throw new Error("Managed organization fixture is missing");
+		const submitted = await request(app).post(`/api/civic/public/${organization.slug}/requests`).send({
+			category: "Pothole", description: "Road repair", location: "Managed town library", anonymous: true
+		});
+		expect(submitted.status).toBe(201);
+		const historyBefore = await database.tenantTransaction(id, tx =>
+			database.rows("SELECT id FROM civic.history", {}, tx));
+		expect(historyBefore).toHaveLength(1);
+
+		expect((await request(app).delete(`/api/civic/platform/organizations/${id}`)).status).toBe(401);
+		expect((await request(app).delete(`/api/civic/platform/organizations/${id}`)
+			.set("Authorization", `Bearer ${tokenA}`)).status).toBe(401);
+
+		const accessToken = `verified-${randomUUID()}`;
+		identities.set(accessToken, { id: randomUUID(), email: "owner@example.org" });
+		const ownerLogin = await request(app).post("/api/civic/platform/login").send({ access_token: accessToken });
+		expect(ownerLogin.status).toBe(200);
+		const authorization = `Bearer ${ownerLogin.body.token}`;
+		expect((await request(app).delete(`/api/civic/platform/organizations/${id}`)
+			.set("Authorization", authorization)).status).toBe(409);
+		const archived = await request(app).put(`/api/civic/platform/organizations/${id}/archive`)
+			.set("Authorization", authorization).send({ archived: true });
+		expect(archived.status).toBe(200);
+		const removed = await request(app).delete(`/api/civic/platform/organizations/${id}`)
+			.set("Authorization", authorization);
+		expect(removed.status).toBe(200);
+		expect(removed.body).toEqual({ removed: true });
+		expect(await database.rows("SELECT id FROM civic.portals WHERE id = :id", { id })).toEqual([]);
+		expect(await database.tenantTransaction(id, tx =>
+			database.rows("SELECT id FROM civic.history", {}, tx))).toEqual([]);
+		expect((await api("get", "/staff/me")).status).toBe(200);
+		createdPlatformTenant = undefined;
 	});
 
 	it("does not expose legacy token, users, tenants or GraphQL endpoints", async () => {
@@ -256,8 +297,12 @@ describe("CivicOS end-to-end workflow and private-safe tracking", () => {
 		expect(detail.body.history[1].actor).toBe(adminA);
 		await expect(database.tenantTransaction(tenantA, tx =>
 			database.rows("UPDATE civic.history SET notes = 'tampered' RETURNING id", {}, tx))).rejects.toThrow();
-		await expect(database.tenantTransaction(tenantA, tx =>
-			database.rows("DELETE FROM civic.history RETURNING id", {}, tx))).rejects.toThrow();
+		expect(await database.tenantTransaction(tenantA, tx =>
+			database.rows("DELETE FROM civic.history RETURNING id", {}, tx))).toEqual([]);
+		expect(await database.tenantTransaction(tenantB, tx =>
+			database.rows("DELETE FROM civic.history RETURNING id", {}, tx), undefined, true)).toEqual([]);
+		const preserved = await api("get", `/staff/requests/${requestId}`, fieldToken);
+		expect(preserved.body.history).toEqual(detail.body.history);
 	});
 	it("allows field start/completion and three field photos while exposing only resident photos", async () => {
 		for (const status of ["in_progress", "completed"]) {
@@ -290,8 +335,16 @@ describe("CivicOS end-to-end workflow and private-safe tracking", () => {
 		expect(JSON.stringify(tracked.body)).not.toContain("Private");
 		expect(tracked.headers["cache-control"]).toBe("no-store");
 	});
-	it("publishes only explicitly authorized map data and safe GeoJSON properties", async () => {
-		expect((await request(app).get(`/api/civic/public/${slugA}/map`)).body.features).toEqual([]);
+	it("shows reviewed requests with safe map properties and requires approval for descriptions", async () => {
+		const beforeApproval = await request(app).get(`/api/civic/public/${slugA}/map`);
+		expect(beforeApproval.status).toBe(200);
+		expect(beforeApproval.body.features).toHaveLength(1);
+		expect(beforeApproval.body.features[0]).toMatchObject({
+			id: requestId, properties: { kind: "request", location: null, status: "Verified" }
+		});
+		expect(Object.keys(beforeApproval.body.features[0].properties).sort()).toEqual(["id", "kind", "location", "status", "title"]);
+		const privateDetail = await request(app).get(`/api/civic/public/${slugA}/requests/${requestId}`);
+		expect(privateDetail.body.description).toBe("");
 		expect((await api("get", "/staff/map")).body.features.length).toBe(1);
 		expect((await api("get", "/staff/map", tokenB)).body.features).toEqual([]);
 		expect((await api("post", `/staff/requests/${requestId}/visibility`).send({ published: true })).status).toBe(200);
@@ -300,6 +353,8 @@ describe("CivicOS end-to-end workflow and private-safe tracking", () => {
 		expect(map.body.type).toBe("FeatureCollection");
 		expect(Object.keys(map.body.features[0].properties).sort()).toEqual(["id", "kind", "location", "status", "title"]);
 		expect(map.body.features[0].properties.location).toBeNull();
+		const approvedDetail = await request(app).get(`/api/civic/public/${slugA}/requests/${requestId}`);
+		expect(approvedDetail.body.description).not.toBe("");
 	});
 	it("keeps an archived ticket public while removing it from staff and field access", async () => {
 		expect((await api("post", `/staff/requests/${requestId}/archive`)).status).toBe(200);
@@ -395,11 +450,11 @@ describe("Organization administration and public content", () => {
 		expect((await api("get", "/staff/roles")).status).toBe(200);
 		expect((await api("put", "/staff/roles").send({ roles })).status).toBe(200);
 		const member = await api("post", "/staff/members").send({
-			email: "observer@example.org", role: "observer", tenant_id: tenantB
+			email: "observer@example.org", display_name: "Town Observer", role: "observer", tenant_id: tenantB
 		});
 		expect(member.status).toBe(201);
 		expect((await api("get", "/staff/members", tokenB)).body.some((item: { id: string }) => item.id === member.body.id)).toBe(false);
-		expect((await api("put", `/staff/members/${member.body.id}`).send({ active: false, role: "observer" })).status).toBe(200);
+		expect((await api("put", `/staff/members/${member.body.id}`).send({ display_name: "Town Observer", active: false, role: "observer" })).status).toBe(200);
 		expect((await api("put", "/staff/roles", fieldToken).send({ roles })).status).toBe(403);
 	});
 	it("updates branding, localization, categories and workflow while preserving used states", async () => {
@@ -431,7 +486,7 @@ describe("Organization administration and public content", () => {
 			]
 		};
 		expect((await api("put", "/staff/settings", tokenB).send({ name: "Town B", settings })).status).toBe(200);
-		const worker = await api("post", "/staff/members", tokenB).send({ email: "crew@example.org", role: "field" });
+		const worker = await api("post", "/staff/members", tokenB).send({ email: "crew@example.org", display_name: "Repair Crew", role: "field" });
 		expect(worker.status).toBe(201);
 		expect((await request(app).post(`/api/civic/public/${slugB}/requests`).send({
 			category: "Pothole", description: "Road repair", location: "Town B library", anonymous: true
@@ -444,7 +499,7 @@ describe("Organization administration and public content", () => {
 		for (const status of ["repairing", "done"]) {
 			expect((await api("post", `/staff/requests/${record.id}/transition`, crewToken).send({ status })).status).toBe(200);
 		}
-		expect((await api("put", `/staff/members/${worker.body.id}`, tokenB).send({ role: "field", active: false })).status).toBe(200);
+		expect((await api("put", `/staff/members/${worker.body.id}`, tokenB).send({ display_name: "Repair Crew", role: "field", active: false })).status).toBe(200);
 		expect((await api("get", "/staff/me", crewToken)).status).toBe(401);
 	});
 	it("supports reasonable custom field workflow states without hard-coded state names", () => {

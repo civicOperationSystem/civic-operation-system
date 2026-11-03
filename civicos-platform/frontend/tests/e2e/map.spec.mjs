@@ -165,3 +165,50 @@ test('residents open pinned public information on the community map', async ({ p
   await expect(page.getByRole('dialog')).toContainText('Calendar date:');
   await expect(page.getByRole('dialog')).toContainText(`${today.getFullYear()}`);
 });
+
+test('residents refresh published information without losing a report draft and can retry failures', async ({ page, request }) => {
+  const title = 'Fresh community update';
+  await page.goto(`/portal/${slug}`);
+  const refresh = page.getByRole('button', { name: 'Refresh', exact: true });
+  await expect(refresh).toBeEnabled();
+  await expect(page.getByRole('heading', { name: title, exact: true })).toHaveCount(0);
+
+  const login = await request.post(`${api}/login`, {
+    data: { slug, access_token: magicLinkToken(admin) },
+  });
+  expect(login.status()).toBe(200);
+  const { token } = await login.json();
+  const created = await request.post(`${api}/staff/content`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: {
+      kind: 'announcement', title, description: 'Published after this page opened.',
+      location: '', longitude: null, latitude: null, url: null,
+      published: true, calendar_date: calendarDate,
+    },
+  });
+  expect(created.status()).toBe(201);
+  await refresh.click();
+  await expect(page.getByRole('status')).toHaveText('Portal refreshed.');
+  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Public requests', exact: true }).click();
+  await expect(page.getByRole('grid').getByRole('button', { name: `${title} (announcement)` })).toBeVisible();
+
+  await page.getByRole('navigation', { name: 'Portal sections' }).getByRole('button', { name: 'Report a problem', exact: true }).click();
+  await page.getByLabel('What happened?', { exact: true }).fill('Unfinished resident report');
+  await page.getByLabel('Location', { exact: true }).fill('Library entrance');
+  const contentUrl = `**/public/${slug}/content`;
+  await page.route(contentUrl, route => route.fulfill({
+    status: 503, json: { message: 'Refresh temporarily unavailable' },
+  }));
+  await refresh.click();
+  const refreshError = page.getByRole('alert').filter({ hasText: 'Refresh temporarily unavailable' });
+  await expect(refreshError).toBeVisible();
+  await expect(page.getByLabel('What happened?', { exact: true })).toHaveValue('Unfinished resident report');
+  await expect(refresh).toBeEnabled();
+  await page.unroute(contentUrl);
+  await refresh.click();
+  await expect(page.getByRole('status')).toHaveText('Portal refreshed.');
+  await expect(refreshError).toHaveCount(0);
+  await expect(page.getByLabel('What happened?', { exact: true })).toHaveValue('Unfinished resident report');
+  await expect(page.getByLabel('Location', { exact: true })).toHaveValue('Library entrance');
+});
