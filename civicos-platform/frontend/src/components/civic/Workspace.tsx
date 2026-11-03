@@ -32,6 +32,18 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   const [roles, setRoles] = useState<Record<string, string[]>>({});
   const [newRole, setNewRole] = useState('');
   const [editingContent, setEditingContent] = useState<CivicRecord | null>(null);
+  const [contentLongitude, setContentLongitude] = useState('');
+  const [contentLatitude, setContentLatitude] = useState('');
+  const [contentMapOpen, setContentMapOpen] = useState(false);
+  useEffect(() => {
+    setContentLongitude(editingContent?.longitude?.toString() ?? '');
+    setContentLatitude(editingContent?.latitude?.toString() ?? '');
+    setContentMapOpen(false);
+  }, [editingContent]);
+  const contentPoint = (() => {
+    const longitude = Number(contentLongitude), latitude = Number(contentLatitude);
+    return contentLongitude.trim() && contentLatitude.trim() && Math.abs(longitude) <= 180 && Math.abs(latitude) <= 90 ? [longitude, latitude] as [number, number] : null;
+  })();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -336,12 +348,17 @@ export default function Workspace({ field = false }: { field?: boolean }) {
               longitude: data.get('longitude') ? Number(data.get('longitude')) : null,
               latitude: data.get('latitude') ? Number(data.get('latitude')) : null,
               url: data.get('url'), published: data.get('published') === 'on',
-            } }); form.reset(); setEditingContent(null); await load();
+            } }); form.reset(); setEditingContent(null); setContentLongitude(''); setContentLatitude(''); setContentMapOpen(false); await load();
           }, 'Content saved');
         }}>
           <label>Type<select name="kind" defaultValue={editingContent?.kind || 'service'} disabled={!!editingContent}>{['service', 'announcement', 'event', 'project', 'facility', 'document', 'emergency', 'infrastructure'].map(kind => <option key={kind}>{kind}</option>)}</select></label>
           <label>Title<input name="title" required maxLength={150} defaultValue={editingContent?.title} /></label><label>Information<textarea name="description" rows={4} required maxLength={10000} defaultValue={editingContent?.description} /></label><label>Location<input name="location" maxLength={500} defaultValue={editingContent?.location} /></label>
-          <div className={styles.inline}><label>Longitude<input name="longitude" type="number" min={-180} max={180} step="any" defaultValue={editingContent?.longitude ?? ''} /></label><label>Latitude<input name="latitude" type="number" min={-90} max={90} step="any" defaultValue={editingContent?.latitude ?? ''} /></label></div>
+          <div className={styles.inline}><label>Longitude<input name="longitude" type="number" min={-180} max={180} step="any" value={contentLongitude} onChange={event => setContentLongitude(event.target.value)} /></label><label>Latitude<input name="latitude" type="number" min={-90} max={90} step="any" value={contentLatitude} onChange={event => setContentLatitude(event.target.value)} /></label></div>
+          <div className={styles.inline}><button type="button" className={styles.secondary} aria-expanded={contentMapOpen} onClick={() => setContentMapOpen(open => !open)}>{contentMapOpen ? 'Hide map' : contentPoint ? 'View or change on map' : 'Pick location on map'}</button>
+            {contentPoint && <button type="button" className={styles.secondary} onClick={() => { setContentLongitude(''); setContentLatitude(''); }}>Clear coordinates</button>}</div>
+          {contentMapOpen && <><p className={styles.hint}>Click the map to set the longitude and latitude.</p>
+            <MapEmbed portal={session.portal} token={token} revision={revision} center={contentPoint || session.portal.settings.center} zoom={contentPoint ? 16 : undefined} marker={contentPoint || undefined}
+              onPoint={([longitude, latitude]) => { setContentLongitude(longitude.toFixed(6)); setContentLatitude(latitude.toFixed(6)); }} /></>}
           <label>Document or information URL (HTTPS)<input name="url" type="url" defaultValue={editingContent?.url || ''} /></label><label className={styles.checkbox}><input name="published" type="checkbox" defaultChecked={editingContent?.published} /> Publish immediately</label><button className={styles.primary} disabled={busy}>Save information</button>
           {editingContent && <button type="button" className={styles.secondary} onClick={() => setEditingContent(null)}>Cancel editing</button>}
         </form></section><section><h3>Community information</h3><div className={styles.fieldCards}>{content.map(item => <article key={item.id} className={styles.card}><span className={styles.tag}>{item.kind} · {item.published ? 'Public' : 'Draft'}</span><h3>{item.title}</h3><p>{item.description}</p>
