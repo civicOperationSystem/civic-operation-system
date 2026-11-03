@@ -5,7 +5,7 @@ export function fieldCanEnter(state: WorkflowState): boolean {
 export type Settings = {
   logo: string; color: string; timezone: string; language: string; contact: string;
   locations: string[]; departments: string[]; services: string[]; categories: string[];
-  anonymous: boolean; center: [number, number]; states: WorkflowState[];
+  anonymous: boolean; center: [number, number]; zoom?: number; states: WorkflowState[];
 };
 export type Portal = { id: string; slug: string; name: string; domain: string | null; settings: Settings };
 export type Member = { id: string; email: string; display_name: string; role: string; active: boolean };

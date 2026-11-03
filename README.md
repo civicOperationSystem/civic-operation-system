@@ -186,6 +186,8 @@ Domain registration and TLS certificate issuance are deployment responsibilities
 
 Locale configuration controls document language and date/time formatting. Interface copy is currently English. Map data is capped at the latest 5,000 authorized locations with an explicit notice; the location list shows the first 200 matches. Request lists are paginated in batches of 100.
 
+The bottom administrator sets the community map in **Staff portal → Organization settings**. Pan and zoom the preview, choose **Use current map view**, then **Save organization settings**. Longitude, latitude and default zoom can also be entered directly. The saved view applies to public, staff and field maps, location pickers and the standalone community map; opening a specific pinned item still focuses on that item. New communities start with a world view rather than New York. Existing communities retain their saved center (and zoom 12 when no zoom was previously saved) until the administrator changes it.
+
 ### Offline field work
 
 Run the database migration before deploying offline support: it adds `civic.field_operations`, which records successful operations so lost acknowledgements and retries do not duplicate photos or audit entries. The API also supplies exact ticket versions for conflict detection.

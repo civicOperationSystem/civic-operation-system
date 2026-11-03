@@ -26,6 +26,54 @@ test.beforeAll(async ({ request }) => {
   expect(created.status()).toBe(201);
 });
 
+test('bottom administrator chooses and saves the community map view for embedded and standalone maps', async ({ page }) => {
+  await signInWithMagicLink(page, 'staff', slug, admin);
+  await page.getByRole('button', { name: 'Organization settings', exact: true }).click();
+  const longitude = page.getByLabel('Map center longitude', { exact: true });
+  const latitude = page.getByLabel('Map center latitude', { exact: true });
+  const zoom = page.getByLabel('Default map zoom', { exact: true });
+  await expect(longitude).toHaveValue('0');
+  await expect(latitude).toHaveValue('0');
+  await expect(zoom).toHaveValue('2');
+  await longitude.fill('12.49');
+  await latitude.fill('41.89');
+  await zoom.fill('11');
+  const iframe = page.locator(MAP_FRAME);
+  const map = iframe.contentFrame();
+  await waitForMap(iframe);
+  await expect(map.getByLabel('Current map view')).toHaveText('Map center: 12.49, 41.89 · Zoom: 11');
+  await map.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  await expect(map.getByLabel('Current map view')).toHaveText('Map center: 12.49, 41.89 · Zoom: 12');
+  const canvas = map.getByLabel('Interactive community infrastructure and service request map');
+  await canvas.focus();
+  await canvas.press('ArrowRight');
+  await expect(map.getByLabel('Current map view')).not.toHaveText('Map center: 12.49, 41.89 · Zoom: 12');
+  await map.getByRole('button', { name: 'Use current map view' }).click();
+  await expect(zoom).toHaveValue('12');
+  await expect(longitude).not.toHaveValue('12.49');
+  const center = [Number(await longitude.inputValue()), Number(await latitude.inputValue())];
+  const expectedView = `Map center: ${center.join(', ')} · Zoom: 12`;
+  await page.getByRole('button', { name: 'Save organization settings', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Organization settings updated' })).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Organization settings', exact: true }).click();
+  await expect(longitude).toHaveValue(String(center[0]));
+  await expect(latitude).toHaveValue(String(center[1]));
+  await expect(zoom).toHaveValue('12');
+  await page.getByRole('button', { name: 'Community map', exact: true }).click();
+  await waitForMap(iframe);
+  await expect(map.getByLabel('Current map view')).toHaveText(expectedView);
+  await page.goto(`/portal/${slug}`);
+  await page.getByRole('button', { name: 'Explore the map', exact: true }).click();
+  await waitForMap(iframe);
+  await expect(map.getByLabel('Current map view')).toHaveText(expectedView);
+  await page.getByRole('button', { name: 'Report a problem', exact: true }).first().click();
+  await waitForMap(iframe);
+  await expect(map.getByLabel('Current map view')).toHaveText(expectedView);
+  await page.goto(`http://127.0.0.1:3311/civic?org=${slug}`);
+  await expect(page.getByLabel('Current map view')).toHaveText(expectedView);
+});
+
 test('staff pick public information coordinates on a map before publishing', async ({ page }) => {
   await signInWithMagicLink(page, 'staff', slug, admin);
   await page.getByRole('button', { name: 'Public information', exact: true }).click();

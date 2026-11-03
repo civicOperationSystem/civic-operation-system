@@ -11,10 +11,12 @@ export default function CivicMap() {
   const pin = useRef<MapMarker | null>(null);
   const geolocate = useRef<GeolocateControlInstance | null>(null);
   const [map, setMap] = useState<MapInstance | null>(null);
+  const [view, setView] = useState<{ center: [number, number]; zoom: number } | null>(null);
   const [context, setContext] = useState<MapContext | null>(null);
   const contextRef = useRef<MapContext | null>(null);
   const parentOrigin = useRef<string | null>(null);
   const [slug, setSlug] = useState('');
+  const [standaloneSlug, setStandaloneSlug] = useState('');
   const [data, setData] = useState<MapCollection>(empty);
   const [kind, setKind] = useState('all');
   const [status, setStatus] = useState('');
@@ -55,10 +57,30 @@ export default function CivicMap() {
     }
     const org = new URLSearchParams(window.location.search).get('org');
     if (org && /^[a-z0-9-]{3,60}$/.test(org) && window.parent === window) {
-      setSlug(org); setContext({ slug: org, token: null, center: [-73.98, 40.75], selectable: false });
+      setSlug(org); setStandaloneSlug(org);
     }
     return () => { window.removeEventListener('message', receive); contextRef.current = null; };
   }, []);
+  useEffect(() => {
+    if (!standaloneSlug) return;
+    const abort = new AbortController();
+    setError(''); setLoading(true);
+    void fetch(`/api/civic/public/${encodeURIComponent(standaloneSlug)}`, { signal: abort.signal, cache: 'no-store' })
+      .then(async response => {
+        const portal = await response.json();
+        if (!response.ok) throw new Error(portal.message || 'Could not load community map settings');
+        const next = { type: 'civic-map-context', slug: standaloneSlug, token: null,
+          center: portal.settings?.center, zoom: portal.settings?.zoom ?? 12, selectable: false };
+        if (!isMapContext(next)) throw new Error('Invalid community map settings');
+        if (!abort.signal.aborted) { contextRef.current = next; setContext(next); }
+      }).catch(failure => {
+        if (!abort.signal.aborted) {
+          console.error('CivicOS community map settings failed', failure);
+          setError(failure instanceof Error ? failure.message : 'Could not load community map settings');
+        }
+      }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
+    return () => abort.abort();
+  }, [standaloneSlug, revision]);
   useEffect(() => {
     let active = true;
     let current: MapInstance | undefined;
@@ -68,9 +90,16 @@ export default function CivicMap() {
       setWorkerUrl(new URL('maplibre-gl/dist/maplibre-gl-worker.mjs', import.meta.url).toString());
       current = new Map({
         container: container.current, style: 'https://tiles.openfreemap.org/styles/liberty',
-        center: [-73.98, 40.75], zoom: 12, minZoom: 1, maxZoom: 19,
+        center: [0, 0], zoom: 2, minZoom: 1, maxZoom: 19,
       });
       instance.current = current;
+      const updateView = () => {
+        if (!active || !current) return;
+        const center = current.getCenter().wrap();
+        setView({ center: [Number(center.lng.toFixed(6)), Number(center.lat.toFixed(6))], zoom: Number(current.getZoom().toFixed(2)) });
+      };
+      current.on('moveend', updateView);
+      updateView();
       current.addControl(new NavigationControl({ showCompass: false }), 'top-right');
       geolocate.current = new GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true });
       current.addControl(geolocate.current, 'top-right');
@@ -121,7 +150,7 @@ export default function CivicMap() {
           if (properties?.kind === 'request') send({ type: 'civic-map-select', id: properties.id });
         });
         current.on('click', event => {
-          if (!current || contextRef.current?.focused || contextRef.current?.locked) return;
+          if (!current || contextRef.current?.focused || contextRef.current?.locked || contextRef.current?.viewSelectable) return;
           const point: [number, number] = [Number(event.lngLat.wrap().lng.toFixed(6)), Number(event.lngLat.lat.toFixed(6))];
           setSelectedPoint(point);
           pin.current?.remove();
@@ -204,7 +233,13 @@ export default function CivicMap() {
     {!context?.focused && !context?.locked && <header className={styles.header}><strong>CivicOS <span>Community map</span></strong><span className={styles.badge}>{context?.token ? 'Permission-aware workspace' : 'Public information only'}</span></header>}
     <div className={context?.focused || context?.locked ? `${styles.layout} ${styles.focusedLayout}` : styles.layout}>
       {!context?.focused && !context?.locked && <aside className={styles.sidebar}>
-        {!context && <form onSubmit={event => { event.preventDefault(); setContext({ slug, token: null, center: [-73.98, 40.75], selectable: false }); }}><label>Organization<input required value={slug} onChange={event => setSlug(event.target.value)} pattern="[a-z0-9-]{3,60}" /></label><button>Open map</button></form>}
+        {!context && <form onSubmit={event => { event.preventDefault(); setStandaloneSlug(slug); setRevision(value => value + 1); }}><label>Organization<input required value={slug} onChange={event => setSlug(event.target.value)} pattern="[a-z0-9-]{3,60}" /></label><button>Open map</button></form>}
+        {context?.viewSelectable && <button disabled={!map} onClick={() => {
+          if (!map) return;
+          const center = map.getCenter().wrap();
+          send({ type: 'civic-map-view', center: [Number(center.lng.toFixed(6)), Number(center.lat.toFixed(6))], zoom: Number(map.getZoom().toFixed(2)) });
+        }}>Use current map view</button>}
+        {view && <output aria-label="Current map view" className={styles.hint}>Map center: {view.center.join(', ')} · Zoom: {view.zoom}</output>}
         <label>Search locations<input value={search} onChange={event => setSearch(event.target.value)} placeholder="Facility, infrastructure, request…" /></label>
         <label>Layer<select value={kind} onChange={event => setKind(event.target.value)}>{['all', 'request', 'facility', 'infrastructure', 'service', 'project', 'event', 'emergency'].map(item => <option key={item} value={item}>{item === 'all' ? 'All authorized layers' : item}</option>)}</select></label>
         <label>Request status<select value={status} onChange={event => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map(item => <option key={item}>{item}</option>)}</select></label>

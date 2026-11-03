@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import type { Portal, Settings, WorkflowState } from '@/lib/civic';
+import MapEmbed from './MapEmbed';
 import styles from './civic.module.css';
 
 export default function OrganizationSettings({ portal, busy, onSave }: {
@@ -28,6 +29,10 @@ export default function OrganizationSettings({ portal, busy, onSave }: {
             <label>Map center longitude<input type="number" required step="any" min={-180} max={180} value={settings.center[0]} onChange={event => set('center', [Number(event.target.value), settings.center[1]])} /></label>
             <label>Map center latitude<input type="number" required step="any" min={-90} max={90} value={settings.center[1]} onChange={event => set('center', [settings.center[0], Number(event.target.value)])} /></label>
           </div>
+          <label>Default map zoom<input type="number" required step="any" min={1} max={19} value={settings.zoom ?? 12} onChange={event => set('zoom', Number(event.target.value))} /></label>
+          <p className={styles.hint}>Pan and zoom to your community, then choose Use current map view. Save organization settings to apply this view to the public portal, staff and field maps, and location pickers.</p>
+          <MapEmbed portal={portal} center={settings.center} zoom={settings.zoom ?? 12}
+            onView={(center, zoom) => setSettings(current => ({ ...current, center, zoom }))} />
         </section>
         <section className={styles.form}>
           <h3>Community operations</h3>

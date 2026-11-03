@@ -17,6 +17,11 @@ test('map context rejects tokens in URLs and malformed coordinates or messages',
   assert.equal(isMapContext({ ...valid, focused: 'true' }), false);
   assert.equal(isMapContext({ ...valid, locked: true }), true);
   assert.equal(isMapContext({ ...valid, locked: true, selectable: true }), false);
+  assert.equal(isMapContext({ ...valid, viewSelectable: true, zoom: 13.5 }), true);
+  assert.equal(isMapContext({ ...valid, viewSelectable: 'true' }), false);
+  assert.equal(isMapContext({ ...valid, viewSelectable: true, locked: true }), false);
+  assert.equal(isMapContext({ ...valid, viewSelectable: true, selectable: true }), false);
+  for (const zoom of [0, 20, NaN, '12']) assert.equal(isMapContext({ ...valid, zoom }), false);
   assert.equal(isMapContext({ ...valid, token: 123 }), false);
   assert.equal(isMapContext({ ...valid, slug: '../staff' }), false);
   assert.equal(isMapContext(null), false);

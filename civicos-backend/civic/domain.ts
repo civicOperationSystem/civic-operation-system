@@ -18,13 +18,13 @@ export type Settings = {
 	logo: string; color: string; timezone: string; language: string;
 	locations: string[]; departments: string[]; categories: string[];
 	services: string[]; anonymous: boolean; contact: string;
-	center: [number, number]; states: State[];
+	center: [number, number]; zoom?: number; states: State[];
 };
 export const defaultSettings: Settings = {
 	logo: "", color: "#0d9488", timezone: "UTC", language: "en",
 	locations: [], departments: ["Public works"], services: ["Community maintenance"],
 	categories: ["Pothole", "Streetlight", "Water leak", "Damaged sign", "Trash", "Facility", "Accessibility"],
-	anonymous: true, contact: "", center: [-73.98, 40.75],
+	anonymous: true, contact: "", center: [0, 0], zoom: 2,
 	states: [
 		{ key: "submitted", label: "Submitted", next: ["reviewed"] },
 		{ key: "reviewed", label: "Reviewed", next: ["assigned"] },
@@ -100,6 +100,10 @@ export function validateSettings(value: unknown): Settings {
 	if (!Array.isArray(settings.center) || settings.center.length !== 2) throw new CivicError(400, "Invalid map center");
 	if (typeof settings.center[0] !== "number" || typeof settings.center[1] !== "number") throw new CivicError(400, "Invalid map center");
 	coordinates(settings.center[0], settings.center[1]);
+	if (settings.zoom !== undefined && (typeof settings.zoom !== "number" ||
+		!Number.isFinite(settings.zoom) || settings.zoom < 1 || settings.zoom > 19)) {
+		throw new CivicError(400, "Map zoom must be between 1 and 19");
+	}
 	if (!Array.isArray(settings.states) || settings.states.length < 2 || settings.states.length > 20) {
 		throw new CivicError(400, "Workflow must have 2-20 states");
 	}
@@ -132,6 +136,6 @@ export function validateSettings(value: unknown): Settings {
 		logo: settings.logo, color: settings.color, timezone: settings.timezone,
 		language: settings.language, locations: settings.locations, departments: settings.departments,
 		categories: settings.categories, services: settings.services, anonymous: settings.anonymous,
-		contact: settings.contact, center: settings.center, states: settings.states
+		contact: settings.contact, center: settings.center, zoom: settings.zoom ?? 12, states: settings.states
 	};
 }

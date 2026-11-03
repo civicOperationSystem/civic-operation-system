@@ -512,9 +512,20 @@ describe("Organization administration and public content", () => {
 		expect((await api("put", "/staff/roles", fieldToken).send({ roles })).status).toBe(403);
 	});
 	it("updates branding, localization, categories and workflow while preserving used states", async () => {
-		const settings = { ...defaultSettings, anonymous: false, language: "it", timezone: "Europe/Rome" };
+		const settings = { ...defaultSettings, anonymous: false, language: "it", timezone: "Europe/Rome", center: [12.49, 41.89], zoom: 13.5 };
+		expect((await api("put", "/staff/settings", fieldToken).send({ name: "Town A", settings })).status).toBe(403);
+		expect((await api("put", "/staff/settings", readOnlyToken).send({ name: "Town A", settings })).status).toBe(403);
 		expect((await api("put", "/staff/settings").send({ name: "Town A", settings })).status).toBe(200);
-		expect((await request(app).get(`/api/civic/public/${slugA}`)).body.settings.language).toBe("it");
+		expect((await request(app).get(`/api/civic/public/${slugA}`)).body.settings).toMatchObject({
+			language: "it", center: [12.49, 41.89], zoom: 13.5
+		});
+		expect((await api("get", "/staff/me", tokenB)).body.portal.settings.center).toEqual(defaultSettings.center);
+		for (const zoom of [0, 20, "12", null]) {
+			expect((await api("put", "/staff/settings").send({ name: "Town A", settings: { ...settings, zoom } })).status).toBe(400);
+		}
+		expect(validateSettings({ ...settings, zoom: undefined }).zoom).toBe(12);
+		expect(() => validateSettings({ ...settings, zoom: NaN })).toThrow();
+		expect(() => validateSettings({ ...settings, center: [181, 0] })).toThrow();
 		expect((await request(app).post(`/api/civic/public/${slugA}/requests`).send({
 			category: "Pothole", description: "Damage", location: "Street", anonymous: true
 		})).status).toBe(400);
