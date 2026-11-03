@@ -13,12 +13,12 @@ export default async function cleanup() {
   });
   try {
     await db.transaction(async transaction => {
-      for (const testSlug of [slug, `managed-${slug}`, `maps-${slug}`]) {
+      for (const testSlug of [slug, `managed-${slug}`, `maps-${slug}`, `offline-${slug}`]) {
         const [portal] = await db.query('SELECT id FROM civic.portals WHERE slug = :slug', {
           replacements: { slug: testSlug }, type: QueryTypes.SELECT, transaction,
         });
         if (!portal) continue;
-        for (const table of ['history', 'records', 'chat_messages', 'chat_direct_threads', 'chat_channels', 'members', 'config']) {
+        for (const table of ['field_operations', 'history', 'records', 'chat_messages', 'chat_direct_threads', 'chat_channels', 'members', 'config']) {
           await db.query(`DELETE FROM civic.${table} WHERE tenant_id = :id`, { replacements: { id: portal.id }, transaction });
         }
         await db.query('DELETE FROM civic.portals WHERE id = :id', { replacements: { id: portal.id }, transaction });

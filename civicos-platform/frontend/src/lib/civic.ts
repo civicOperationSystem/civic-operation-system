@@ -14,7 +14,7 @@ export type CivicRecord = {
   id: string; kind: string; title: string; description: string; location: string;
   category: string; status: string; reference: string; published: boolean;
   assigned_to: string | null; archived_at?: string | null; longitude: number | null; latitude: number | null;
-  created_at: string; updated_at: string; url?: string | null; calendar_date?: string | null;
+  created_at: string; updated_at: string; sync_version?: string; url?: string | null; calendar_date?: string | null;
 };
 export type History = {
   id: string; actor: string | null; previous_status: string | null; new_status: string;
@@ -28,6 +28,10 @@ export type Tracking = {
   reference: string; title: string; category: string; status: string; reported: string; updated: string;
   history: { status: string; timestamp: string }[];
 };
+export class CivicApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) { super(message); this.status = status; }
+}
 export async function civicApi<T>(path: string, options: { token?: string; method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
   const response = await fetch(`/api/civic${path}`, {
     method: options.method || 'GET',
@@ -40,7 +44,7 @@ export async function civicApi<T>(path: string, options: { token?: string; metho
     cache: 'no-store',
   });
   const body = await response.json();
-  if (!response.ok) throw new Error(body.message || `Operation failed (${response.status})`);
+  if (!response.ok) throw new CivicApiError(body.message || `Operation failed (${response.status})`, response.status);
   return body as T;
 }
 export function displayDate(date: string, settings: Settings): string {

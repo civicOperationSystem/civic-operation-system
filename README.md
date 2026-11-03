@@ -180,10 +180,23 @@ Domain registration and TLS certificate issuance are deployment responsibilities
 - Cryptographically random 128-bit tracking references. Tracking uses a POST body and exposes only category, public status and dates; not staff names, notes, contacts, assignments or photos.
 - Configurable workflow states and allowed transitions. Every submission, assignment and transition stores an immutable actor/status/timestamp/notes record. Tenant sessions cannot update or delete audit history; only permanent organization removal by the platform owner deletes it.
 - Assigned field workers can enter only field-enabled states. Staff alone perform review and verification by default. Disabled accounts lose access on their next API request.
+- Field assignments and their details can be reopened offline. Notes, workflow updates, completion photos and coordinate corrections are queued durably on the device and synchronized automatically when the field workspace is open and connected, or with **Sync pending updates**.
 - Publishing and editing community information, member role changes, activation/deactivation and explicit public request-map visibility.
 - Authorized GIS layers, clustered points, search, status/type filters, zoom-to-results, resident pin selection and an accessible location list.
 
 Locale configuration controls document language and date/time formatting. Interface copy is currently English. Map data is capped at the latest 5,000 authorized locations with an explicit notice; the location list shows the first 200 matches. Request lists are paginated in batches of 100.
+
+### Offline field work
+
+Run the database migration before deploying offline support: it adds `civic.field_operations`, which records successful operations so lost acknowledgements and retries do not duplicate photos or audit entries. The API also supplies exact ticket versions for conflict detection.
+
+1. Use a current browser over HTTPS (localhost also works). Sign in to `/field?org=your-workspace` online and wait for assignments to finish loading. All assigned tickets and details are cached, including private notes and photos; refresh online before leaving for the field.
+2. The field shell is cached by a service worker. After its first successful installation, the workspace can reopen without a connection, using this device's last field identity even if its online session has expired. This is local device access, not authorization to write to the server.
+3. Offline changes appear as pending, not server-confirmed. Coordinate corrections can be typed and saved without the map. The three-photo limit includes pending photos. New resident reports, maps/tiles and chat are not available offline.
+4. Reconnect and keep the workspace open to synchronize (also retried every 30 seconds), or press **Sync pending updates**. The server checks the current account, permissions, assignment and ticket version on every write. If a ticket changed or access was removed, its queued chain stops and stays visible for review. Copy needed notes, discard that ticket's pending updates, refresh online and resubmit against the current assignment; conflicts never silently overwrite dispatch changes.
+5. Use trusted, individually secured devices: cached data is private browser storage, not encrypted by CivicOS. Signing out of the field workspace clears that identity's cached assignments and queued work across its workspaces on the device; a confirmation warns before clearing. Synchronize before signing out. Browser storage eviction, clearing site data, private browsing and device loss can remove unsent changes. First-time sign-in and server authorization always require a connection; expired sessions may require signing in again.
+
+Synchronization runs in the open workspace, not while the browser is closed. Storage/quota failures are surfaced explicitly and an update is never reported as queued until its local transaction commits.
 
 ## Validation
 

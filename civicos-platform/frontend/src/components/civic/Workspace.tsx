@@ -3,13 +3,16 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { Session as SupabaseSession } from '@supabase/supabase-js';
 import { civicApi, CivicRecord, Session, Member, RequestDetail, Portal, displayDate, fieldCanEnter, readFieldPhoto } from '@/lib/civic';
+import { projectFieldDetail, type FieldUpdate } from '@/lib/field-offline';
 import { getCivicSupabase, isCivicSupabaseConfigured } from '@/lib/supabase';
 import MapEmbed from './MapEmbed';
 import OrganizationSettings from './OrganizationSettings';
 import ChatPanel from './ChatPanel';
+import useFieldOffline from './useFieldOffline';
 import styles from './civic.module.css';
 
 export default function Workspace({ field = false }: { field?: boolean }) {
+  const offline = useFieldOffline(field);
   const [slug, setSlug] = useState('');
   const [linkedOrganization, setLinkedOrganization] = useState(false);
   const [organizationName, setOrganizationName] = useState('');
@@ -26,7 +29,19 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   const [notes, setNotes] = useState('');
   const [noteVisibility, setNoteVisibility] = useState<'role_only' | 'down_chain'>('role_only');
   const [fieldPoint, setFieldPoint] = useState<[number, number] | null>(null);
+  const [fieldLongitude, setFieldLongitude] = useState('');
+  const [fieldLatitude, setFieldLatitude] = useState('');
   const [editingFieldLocation, setEditingFieldLocation] = useState(false);
+  useEffect(() => {
+    if (!field) return;
+    const location: [number, number] | null = detail?.longitude != null && detail.latitude != null
+      ? [detail.longitude, detail.latitude] : null;
+    setFieldPoint(location); setEditingFieldLocation(!location);
+  }, [field, detail?.id, detail?.longitude, detail?.latitude]);
+  useEffect(() => {
+    setFieldLongitude(fieldPoint?.[0].toString() || '');
+    setFieldLatitude(fieldPoint?.[1].toString() || '');
+  }, [fieldPoint]);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [worker, setWorker] = useState('');
   const [roles, setRoles] = useState<Record<string, string[]>>({});
@@ -49,6 +64,17 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const exchangedToken = useRef('');
+  const exchangeSession = useRef<((authSession: SupabaseSession) => Promise<void>) | null>(null);
+  useEffect(() => {
+    if (!field || !offline.cache) return;
+    const current = offline.cache;
+    setSession(current.session);
+    setRecords(current.details.map(item => projectFieldDetail(item, current.queue)));
+    setDetail(previous => {
+      const item = current.details.find(item => item.id === previous?.id);
+      return item ? projectFieldDetail(item, current.queue) : null;
+    });
+  }, [field, offline.cache]);
   useEffect(() => {
     const organization = new URLSearchParams(window.location.search).get('org') || '';
     setSlug(organization);
@@ -72,6 +98,11 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   }, [session, field]);
   const has = (permission: string) => !!session?.permissions.includes(permission);
   const load = useCallback(async (access = token, selectedPage = page) => {
+    if (field) {
+      await offline.refresh(access);
+      setRevision(value => value + 1);
+      return;
+    }
     const current = await civicApi<Session>('/staff/me', { token: access });
     const [requests, people, pages] = await Promise.all([
       current.permissions.some(item => item === 'read' || item === 'field') ? civicApi<CivicRecord[]>(`/staff/requests?page=${selectedPage}`, { token: access }) : Promise.resolve([]),
@@ -84,10 +115,16 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       setRoles(config.roles);
     }
     setRevision(value => value + 1);
-  }, [page, token]);
+  }, [page, token, field, offline.refresh]);
   useEffect(() => {
     if (!slug || !isCivicSupabaseConfigured()) return;
     let active = true;
+    if (field && !navigator.onLine) {
+      void offline.resume(slug).catch(failure => {
+        if (active) setError(failure instanceof Error ? failure.message : 'Could not restore cached assignments.');
+      });
+      return () => { active = false; };
+    }
     const supabase = getCivicSupabase();
     const exchange = async (authSession: SupabaseSession) => {
       const exchangeKey = `${slug}:${authSession.access_token}`;
@@ -95,23 +132,36 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       exchangedToken.current = exchangeKey;
       setBusy(true); setError('');
       try {
+        if (field && !navigator.onLine) {
+          await offline.open(authSession.user.id, slug);
+          return;
+        }
         const response = await civicApi<{ token: string }>('/login', {
           method: 'POST', body: { slug, access_token: authSession.access_token },
         });
-        await load(response.token, 1);
+        if (field) await offline.open(authSession.user.id, slug, response.token);
+        else await load(response.token, 1);
         if (active) { setToken(response.token); setPage(1); setNotice(''); }
+        if (field) void offline.sync();
       } catch (failure) {
         if (active) {
+          if (field && failure instanceof TypeError) {
+            try { await offline.open(authSession.user.id, slug); return; }
+            catch (cacheFailure) { setError(cacheFailure instanceof Error ? cacheFailure.message : 'Could not restore offline assignments'); }
+          }
           setError(failure instanceof Error ? failure.message : 'Could not verify your organization access');
           setSession(null); setToken('');
         }
       } finally { if (active) setBusy(false); }
     };
+    exchangeSession.current = exchange;
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, authSession) => {
       if (event === 'SIGNED_OUT') {
+        if (field) offline.pause();
         exchangedToken.current = '';
         setToken(''); setSession(null); setRecords([]); setContent([]); setMembers([]); setDetail(null);
-        setRoles({}); setEditingContent(null); setError(''); setNotice('');
+        setRoles({}); setEditingContent(null); setError('');
+        setNotice(field ? 'Your online session ended. Sign in to recover any pending work saved on this device.' : '');
       } else if (authSession) {
         window.setTimeout(() => { void exchange(authSession); }, 0);
       }
@@ -122,8 +172,25 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     }).catch(failure => {
       if (active) setError(failure instanceof Error ? failure.message : 'Could not restore your sign-in');
     });
-    return () => { active = false; subscription.unsubscribe(); };
-  }, [load, slug]);
+    return () => { active = false; exchangeSession.current = null; subscription.unsubscribe(); };
+  }, [load, slug, field, offline.open, offline.resume, offline.sync, offline.pause, offline.online]);
+  const reconnect = useCallback(async () => {
+    if (!isCivicSupabaseConfigured()) throw new Error('Authentication is not configured.');
+    exchangedToken.current = '';
+    const { data, error: authError } = await getCivicSupabase().auth.getSession();
+    if (authError) throw authError;
+    if (!data.session) throw new Error('Sign in online again to sync pending work.');
+    await exchangeSession.current?.(data.session);
+    await offline.sync();
+  }, [offline.sync]);
+  useEffect(() => {
+    if (!field) return;
+    const connected = () => {
+      void reconnect().catch(failure => setError(failure instanceof Error ? failure.message : 'Sign in online again to sync pending work.'));
+    };
+    window.addEventListener('online', connected);
+    return () => window.removeEventListener('online', connected);
+  }, [field, reconnect]);
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setBusy(true);
     const form = event.currentTarget;
@@ -150,7 +217,9 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   }
   async function selectRequest(id: string) {
     await action(async () => {
-      const result = await civicApi<RequestDetail>(`/staff/requests/${id}`, { token });
+      const cached = offline.cache?.details.find(item => item.id === id);
+      const result = field && cached ? projectFieldDetail(cached, offline.cache!.queue) :
+        await civicApi<RequestDetail>(`/staff/requests/${id}`, { token });
       setDetail(result); setWorker(result.assigned_to || ''); setNotes('');
       const location = result.longitude !== null && result.latitude !== null ? [result.longitude, result.latitude] as [number, number] : null;
       setFieldPoint(location); setEditingFieldLocation(!location);
@@ -158,6 +227,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   }
   async function transition(next: string) {
     if (!detail) return;
+    if (field) { await queueFieldUpdate({ kind: 'transition', body: { status: next, notes, note_visibility: 'down_chain' } }); return; }
     await action(async () => {
       await civicApi(`/staff/requests/${detail.id}/transition`, { token, method: 'POST', body: { status: next, notes, note_visibility: noteVisibility } });
       setDetail(await civicApi<RequestDetail>(`/staff/requests/${detail.id}`, { token }));
@@ -181,6 +251,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   }
   async function addNote() {
     if (!detail || !notes.trim()) return;
+    if (field) { await queueFieldUpdate({ kind: 'notes', body: { notes, note_visibility: 'down_chain' } }); return; }
     await action(async () => {
       await civicApi(`/staff/requests/${detail.id}/notes`, { token, method: 'POST', body: { notes, note_visibility: noteVisibility } });
       setDetail(await civicApi<RequestDetail>(`/staff/requests/${detail.id}`, { token }));
@@ -191,6 +262,13 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     if (!detail || !file) return;
     await action(async () => {
       const photo = await readFieldPhoto(file);
+      if (field) {
+        const point = readFieldCoordinates();
+        await offline.queue(detail.id, { kind: 'field-photo', body: {
+          photo, ...(point ? { longitude: point[0], latitude: point[1] } : {}),
+        } });
+        return;
+      }
       await civicApi(`/staff/requests/${detail.id}/field-photo`, {
         token, method: 'POST', body: {
           photo, longitude: fieldPoint?.[0], latitude: fieldPoint?.[1],
@@ -201,7 +279,19 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       const location = updated.longitude !== null && updated.latitude !== null ? [updated.longitude, updated.latitude] as [number, number] : null;
       setFieldPoint(location); setEditingFieldLocation(!location);
       await load();
-    }, 'Field photo uploaded.');
+    }, field ? 'Photo saved on this device. Check pending updates for sync status.' : 'Field photo uploaded.');
+  }
+  async function queueFieldUpdate(update: FieldUpdate) {
+    if (!detail) return;
+    await action(async () => {
+      await offline.queue(detail.id, update); setNotes('');
+    }, 'Update saved on this device. Check pending updates for sync status.');
+  }
+  function readFieldCoordinates(): [number, number] | null {
+    if (!fieldLongitude.trim() && !fieldLatitude.trim()) return null;
+    const longitude = Number(fieldLongitude), latitude = Number(fieldLatitude);
+    if (!fieldLongitude.trim() || !fieldLatitude.trim() || !Number.isFinite(longitude) || !Number.isFinite(latitude) || Math.abs(longitude) > 180 || Math.abs(latitude) > 90) throw new Error('Enter valid longitude and latitude.');
+    return [longitude, latitude];
   }
   function stateLabel(key: string | null): string {
     return session?.portal.settings.states.find(state => state.key === key)?.label || key || 'Submitted';
@@ -218,9 +308,11 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   })();
   const fieldPhotoCount = detail?.field_photos.length || 0;
   async function logout() {
+    if (field && !window.confirm('Signing out deletes cached assignments and any pending updates across all your workspaces on this device. Synchronize before signing out. Continue?')) return;
     try {
+      if (field) { await offline.forget(); setSession(null); setDetail(null); setRecords([]); }
       if (isCivicSupabaseConfigured()) {
-        const { error: authError } = await getCivicSupabase().auth.signOut();
+        const { error: authError } = await getCivicSupabase().auth.signOut(field ? { scope: 'local' } : undefined);
         if (authError) throw authError;
       }
     } catch (failure) {
@@ -232,7 +324,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   }
   return <main className={styles.shell} style={{ '--civic-accent': session?.portal.settings.color || '#0d9488' } as React.CSSProperties}>
     <header className={styles.header}><Link className={styles.brand} href="/">C<span>O</span> <strong>CivicOS</strong></Link>
-      <div className={styles.headerLinks}><Link href={`/portal/${slug}`}>Public portal ↗</Link>{session && <button onClick={() => void logout()}>Sign out</button>}</div></header>
+      <div className={styles.headerLinks}><Link href={`/portal/${slug}`}>Public portal ↗</Link>{session && <button disabled={busy || (field && offline.syncing)} onClick={() => void logout()}>Sign out</button>}</div></header>
     {!session ? <section className={styles.login}><p className={styles.eyebrow}>{field ? 'FIELD WORKSPACE' : 'STAFF OPERATIONS'}</p><h1>{field ? 'Good work starts here.' : 'Your community at work.'}</h1><p className={styles.hint}>Sign in to your organization's secure workspace. Access is controlled by your role.</p>
       <form onSubmit={login} className={styles.form}><label>Organization{linkedOrganization ?
         <input readOnly value={organizationName || slug} /> :
@@ -251,8 +343,26 @@ export default function Workspace({ field = false }: { field?: boolean }) {
         </button>)}
       </aside>
       <section className={styles.main}>
-        {view === 'chat' && has('chat') ? <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>TEAM COMMUNICATION</p><h2>{field ? 'Field team chat' : 'Staff chat'}</h2></div></div><ChatPanel token={token} session={session} /></> : <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>{field ? 'OUT IN THE COMMUNITY' : 'OPERATIONS OVERVIEW'}</p><h2>{({ requests: field ? 'Your work, in one place' : 'Service requests', calendar: 'Request calendar', map: 'Operational map', content: 'Public information', members: 'People & access', settings: 'Organization settings' })[view]}</h2></div>
-          <button disabled={busy} className={styles.secondary} onClick={() => void action(() => load(), 'Workspace refreshed')}>Refresh</button></div>
+        {field && <section aria-label="Offline work" className={styles.card}>
+          <p role="status">{offline.online ? 'Online' : 'Offline — using saved assignments'} · {offline.cache?.queue.length || 0} pending updates{offline.syncing ? ' · Syncing…' : ''}</p>
+          <p className={styles.hint}>Assignments, private notes and photos are stored on this device. Last refreshed: {offline.cache ? displayDate(offline.cache.savedAt, session.portal.settings) : 'Not cached'}. Maps and chat need a connection. Keep this workspace open to sync automatically.</p>
+          <p className={styles.hint}>{offline.shellReady ? 'Offline reopening ready.' : 'Preparing offline reopening. Stay online until ready.'}</p>
+          <button className={styles.secondary} disabled={busy || offline.syncing || !offline.online} onClick={() => void action(reconnect, 'Sync attempted. Check pending updates for any issues.')}>Sync pending updates</button>
+          {offline.error && <p role="alert" className={styles.error}>{offline.error}</p>}
+          {!!offline.cache?.queue.length && <ul>{offline.cache.queue.map(update => <li key={update.id}>
+            {offline.cache?.details.find(item => item.id === update.requestId)?.title || update.requestId} · {update.kind} · {update.error || 'Waiting to sync'}
+            {update.kind === 'notes' && <p>{update.body.notes}</p>}
+            {update.kind === 'transition' && <p>{stateLabel(update.body.status)} {update.body.notes}</p>}
+            {update.kind === 'field-photo' && <img src={update.body.photo} alt="Pending field work photo" width={80} />}
+            {update.error && <button className={styles.secondary} disabled={busy || offline.syncing} onClick={() => {
+              if (window.confirm('Discard all pending updates for this ticket? Copy any notes you need before discarding. Refresh online to review the current assignment.')) {
+                void action(() => offline.discard(update.requestId), 'Pending updates discarded. Review the ticket before submitting new work.');
+              }
+            }}>Discard pending updates for this ticket</button>}
+          </li>)}</ul>}
+        </section>}
+        {view === 'chat' && has('chat') ? <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>TEAM COMMUNICATION</p><h2>{field ? 'Field team chat' : 'Staff chat'}</h2></div></div>{field && !offline.online ? <p>Chat is unavailable offline.</p> : <ChatPanel token={token} session={session} />}</> : <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>{field ? 'OUT IN THE COMMUNITY' : 'OPERATIONS OVERVIEW'}</p><h2>{({ requests: field ? 'Your work, in one place' : 'Service requests', calendar: 'Request calendar', map: 'Operational map', content: 'Public information', members: 'People & access', settings: 'Organization settings' })[view]}</h2></div>
+          <button disabled={busy || (field && (!offline.online || offline.syncing))} className={styles.secondary} onClick={() => void action(() => load(), 'Workspace refreshed')}>Refresh</button></div>
         {!detail && error && <p role="alert" className={styles.error}>{error}</p>}
         {notice && <p role="status" className={styles.success}>{notice}</p>}
         {view === 'requests' && <>
@@ -269,7 +379,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
             })}
           </div>
           {!visible.length && <div className={styles.empty}><h3>No requests to show.</h3><p>{field ? 'Assigned work will appear here when your team dispatches it.' : 'Requests submitted through the public portal appear here.'}</p></div>}
-          <div className={styles.inline} style={{ marginTop: 18 }}><button className={styles.secondary} disabled={busy || page === 1} onClick={() => void action(async () => { await load(token, page - 1); setPage(page - 1); }, '')}>Previous</button><span>Page {page}</span><button className={styles.secondary} disabled={busy || records.length < 100} onClick={() => void action(async () => { await load(token, page + 1); setPage(page + 1); }, '')}>Next</button></div>
+          {!field && <div className={styles.inline} style={{ marginTop: 18 }}><button className={styles.secondary} disabled={busy || page === 1} onClick={() => void action(async () => { await load(token, page - 1); setPage(page - 1); }, '')}>Previous</button><span>Page {page}</span><button className={styles.secondary} disabled={busy || records.length < 100} onClick={() => void action(async () => { await load(token, page + 1); setPage(page + 1); }, '')}>Next</button></div>}
         </>}
         {view === 'calendar' && (() => {
           const monthStart = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
@@ -287,7 +397,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
             <div className={styles.calendar} role="grid" aria-label="Request calendar">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <strong key={day}>{day}</strong>)}{days.map(date => <section key={date.toISOString()} className={date.getMonth() === calendarMonth.getMonth() ? styles.calendarDay : `${styles.calendarDay} ${styles.calendarMuted}`}><time dateTime={date.toISOString().slice(0, 10)}>{date.getDate()}</time>{recordsForDay(date).map(record => <button key={record.id} onClick={() => void selectRequest(record.id)}>{record.title}<small>{stateLabel(record.status)}{record.archived_at ? ' · Archived' : ''}</small></button>)}</section>)}</div>
           </>;
         })()}
-        {view === 'map' && <><p className={styles.hint}>This map is read-only by default. Use the zoom controls to inspect an area, or enable interaction to browse locations and open a request.</p><MapEmbed portal={session.portal} token={token} revision={revision} locked onSelect={id => void selectRequest(id)} /></>}
+        {view === 'map' && <><p className={styles.hint}>This map is read-only by default. Use the zoom controls to inspect an area, or enable interaction to browse locations and open a request.</p>{field && !offline.online ? <p>Map unavailable offline. Open assignments from My assignments.</p> : <MapEmbed portal={session.portal} token={token} revision={revision} locked onSelect={id => void selectRequest(id)} />}</>}
         {detail && ['requests', 'calendar', 'map'].includes(view) && <article className={`${styles.card} ${styles.detail}`}>
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{stateLabel(detail.status)}</span><h3>{detail.title}</h3></div><button onClick={() => setDetail(null)} className={styles.secondary}>Close</button></div>
           {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload up to three field photos (PNG, JPEG or WebP, up to 5 MB each). Photos over 512 KB are compressed to JPEG before upload. Field photos are public when the request is verified.</p>
@@ -297,11 +407,18 @@ export default function Workspace({ field = false }: { field?: boolean }) {
               void uploadFieldPhoto(file);
             }} /></label>
             {fieldPhotoCount >= 3 && <p className={styles.hint}>All three field photo slots are filled.</p>}
-            {fieldPoint && !editingFieldLocation ?
+            {!offline.online ? <p className={styles.hint}>Map unavailable offline. Enter the corrected coordinates below.</p> : fieldPoint && !editingFieldLocation ?
               <><MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint} marker={fieldPoint} zoom={16} focused locked />
                 <button className={styles.secondary} disabled={busy} onClick={() => setEditingFieldLocation(true)}>Change location</button></> :
               <MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint || session.portal.settings.center} zoom={fieldPoint ? 16 : undefined} onPoint={point => { setFieldPoint(point); setEditingFieldLocation(false); }} />}
-            <div className={styles.inline}><label>Longitude<input readOnly value={fieldPoint?.[0] ?? ''} placeholder="Click the map" /></label><label>Latitude<input readOnly value={fieldPoint?.[1] ?? ''} placeholder="Click the map" /></label></div>
+            <div className={styles.inline}><label>Longitude<input type="number" min={-180} max={180} step="any" value={fieldLongitude} onChange={event => setFieldLongitude(event.target.value)} /></label><label>Latitude<input type="number" min={-90} max={90} step="any" value={fieldLatitude} onChange={event => setFieldLatitude(event.target.value)} /></label></div>
+            <button disabled={busy} className={styles.secondary} onClick={() => void action(async () => {
+              const point = readFieldCoordinates();
+              if (!point) throw new Error('Enter valid longitude and latitude.');
+              const [longitude, latitude] = point;
+              await offline.queue(detail.id, { kind: 'location', body: { longitude, latitude } });
+              setFieldPoint([longitude, latitude]);
+            }, 'Location saved on this device. Check pending updates for sync status.')}>Save location</button>
             </section>}
           <div className={!field ? styles.staffTicketLayout : undefined}>
             <div>

@@ -112,6 +112,18 @@ ALTER TABLE civic.history ADD COLUMN IF NOT EXISTS note_visibility text NOT NULL
 ALTER TABLE civic.history DROP CONSTRAINT IF EXISTS history_note_visibility_check;
 ALTER TABLE civic.history ADD CONSTRAINT history_note_visibility_check
   CHECK (note_visibility IN ('role_only', 'down_chain'));
+CREATE TABLE IF NOT EXISTS civic.field_operations (
+  id uuid NOT NULL,
+  tenant_id uuid NOT NULL,
+  member_id uuid NOT NULL,
+  request_id uuid NOT NULL,
+  fingerprint text NOT NULL,
+  response jsonb NOT NULL,
+  response_status integer NOT NULL,
+  PRIMARY KEY (tenant_id, member_id, id),
+  FOREIGN KEY (tenant_id, member_id) REFERENCES civic.members(tenant_id, id),
+  FOREIGN KEY (tenant_id, request_id) REFERENCES civic.records(tenant_id, id)
+);
 CREATE TABLE IF NOT EXISTS civic.chat_channels (
   id uuid PRIMARY KEY,
   tenant_id uuid NOT NULL REFERENCES civic.portals(id),
@@ -192,7 +204,7 @@ CREATE POLICY portal_platform_delete ON civic.portals FOR DELETE
 DO $$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['config', 'members', 'records', 'history', 'chat_channels', 'chat_direct_threads', 'chat_messages'] LOOP
+  FOREACH t IN ARRAY ARRAY['config', 'members', 'records', 'history', 'field_operations', 'chat_channels', 'chat_direct_threads', 'chat_messages'] LOOP
     EXECUTE format('ALTER TABLE civic.%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE civic.%I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON civic.%I', t);
@@ -203,6 +215,15 @@ END $$;
 
 DROP POLICY IF EXISTS history_platform_delete ON civic.history;
 CREATE POLICY history_platform_delete ON civic.history AS RESTRICTIVE FOR DELETE
+  USING (current_setting('civic.platform_admin', true) = 'true');
+
+DROP POLICY IF EXISTS field_operation_member ON civic.field_operations;
+CREATE POLICY field_operation_member ON civic.field_operations AS RESTRICTIVE FOR ALL
+  USING (current_setting('civic.platform_admin', true) = 'true'
+    OR member_id::text = current_setting('civic.member', true))
+  WITH CHECK (member_id::text = current_setting('civic.member', true));
+DROP POLICY IF EXISTS field_operation_platform_delete ON civic.field_operations;
+CREATE POLICY field_operation_platform_delete ON civic.field_operations AS RESTRICTIVE FOR DELETE
   USING (current_setting('civic.platform_admin', true) = 'true');
 
 DROP POLICY IF EXISTS chat_thread_participant ON civic.chat_direct_threads;
@@ -239,6 +260,7 @@ GRANT USAGE ON SCHEMA civic TO civic_app;
 GRANT SELECT, INSERT, UPDATE ON civic.portals TO civic_app;
 GRANT SELECT, INSERT, UPDATE ON civic.config, civic.members, civic.records TO civic_app;
 GRANT SELECT, INSERT ON civic.history TO civic_app;
+GRANT SELECT, INSERT, DELETE ON civic.field_operations TO civic_app;
 GRANT SELECT, INSERT ON civic.chat_channels, civic.chat_direct_threads, civic.chat_messages TO civic_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON civic.history FROM civic_app;
 GRANT DELETE ON civic.portals, civic.config, civic.members, civic.records, civic.history,

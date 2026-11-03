@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Router, Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { Transaction } from "sequelize";
@@ -22,7 +22,7 @@ type RecordRow = {
 	photos: string[];
 	field_photo: string | null;
 	field_photos: string[];
-	created_at: string; updated_at: string;
+	created_at: string; updated_at: string; sync_version: string;
 };
 type ChatMessage = {
 	id: string; sender_id: string; sender_email: string; sender_name: string; body: string; created_at: string;
@@ -33,7 +33,8 @@ type HistoryRow = {
 };
 // calendar_date is formatted in SQL so the driver never shifts the date-only value through a local-time Date.
 const publicColumns = "id, kind, title, description, location, longitude, latitude, url, to_char(calendar_date, 'YYYY-MM-DD') AS calendar_date, created_at, updated_at";
-const staffColumns = "id, kind, title, description, location, category, longitude, latitude, published, status, reference, assigned_to, archived_at, photo, photos, field_photo, field_photos, created_at, updated_at";
+const syncVersion = `to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+const staffColumns = `id, kind, title, description, location, category, longitude, latitude, published, status, reference, assigned_to, archived_at, photo, photos, field_photo, field_photos, created_at, updated_at, ${syncVersion} AS sync_version`;
 const contentKinds = ["service", "announcement", "event", "project", "facility", "document", "emergency", "infrastructure"];
 export const civicRouter = Router();
 
@@ -101,7 +102,8 @@ function secured(
 	path: string,
 	permission: Permission | null,
 	work: (req: Request, res: Reply, context: Context) => Promise<void>,
-	middleware?: (req: Request, res: Response, next: NextFunction) => void
+	middleware?: (req: Request, res: Response, next: NextFunction) => void,
+	offline = false
 ): void {
 	civicRouter[method](path, ...(middleware ? [middleware] : []), endpoint(async (req, res) => {
 		const session = accessToken(req);
@@ -118,7 +120,36 @@ function secured(
 			if (!member || !config || !portal) throw new CivicError(401, "Account is no longer active");
 			const allowed = config.roles[member.role] || [];
 			if (permission && !allowed.includes(permission)) throw new CivicError(403, "Permission denied");
-			await work(req, reply, { member, permissions: allowed, portal, tx });
+			const context = { member, permissions: allowed, portal, tx };
+			const queued = offline && (req.body.client_operation_id !== undefined || req.body.expected_version !== undefined);
+			let receipt: { id: string; fingerprint: string; requestId: string } | undefined;
+			if (queued) {
+				const id = identifier(req.body.client_operation_id);
+				const expected = text(req.body.expected_version, "ticket version", 40);
+				const record = await requestFor(context, req.params.id, true);
+				if (record.assigned_to !== member.id) throw new CivicError(403, "This ticket is no longer assigned to you");
+				const fingerprint = createHash("sha256").update(JSON.stringify({ path: req.path, body: req.body })).digest("hex");
+				const [saved] = await rows<{ fingerprint: string; response: unknown; response_status: number }>(
+					"SELECT fingerprint, response, response_status FROM civic.field_operations WHERE member_id = :member AND id = :id",
+					{ member: member.id, id }, tx);
+				if (saved) {
+					if (saved.fingerprint !== fingerprint) throw new CivicError(409, "This operation ID was already used for a different update");
+					body = saved.response; status = saved.response_status; return;
+				}
+				if (record.sync_version !== expected) throw new CivicError(409, "This ticket changed while offline. Review the latest ticket before resubmitting");
+				receipt = { id, fingerprint, requestId: record.id };
+			}
+			await work(req, reply, context);
+			if (receipt) {
+				const [updated] = await rows<{ sync_version: string }>(
+					`SELECT ${syncVersion} AS sync_version FROM civic.records WHERE id = :id`, { id: receipt.requestId }, tx);
+				if (!updated || !body || typeof body !== "object") throw new Error("Missing offline update response");
+				body = { ...body, sync_version: updated.sync_version };
+				await rows(`INSERT INTO civic.field_operations(id, tenant_id, member_id, request_id, fingerprint, response, response_status)
+					VALUES (:id, :tenant, :member, :requestId, :fingerprint, CAST(:response AS jsonb), :status) RETURNING id`, {
+					...receipt, tenant: portal.id, member: member.id, response: JSON.stringify(body), status
+				}, tx);
+			}
 		}, session.subject);
 		res.status(status).json(body);
 	}));
@@ -463,6 +494,7 @@ civicRouter.delete("/platform/organizations/:id", endpoint(async (req, res) => {
 		await rows("DELETE FROM civic.chat_messages WHERE tenant_id = :id", { id }, tx);
 		await rows("DELETE FROM civic.chat_direct_threads WHERE tenant_id = :id", { id }, tx);
 		await rows("DELETE FROM civic.chat_channels WHERE tenant_id = :id", { id }, tx);
+		await rows("DELETE FROM civic.field_operations WHERE tenant_id = :id", { id }, tx);
 		await rows("DELETE FROM civic.history WHERE tenant_id = :id", { id }, tx);
 		await rows("DELETE FROM civic.records WHERE tenant_id = :id", { id }, tx);
 		await rows("DELETE FROM civic.members WHERE tenant_id = :id", { id }, tx);
@@ -514,7 +546,7 @@ secured("post", "/staff/requests/:id/transition", "transition", async (req, res,
 		role: roleLevel(context), previous: record.status, next, notes, visibility, assigned: record.assigned_to
 	}, context.tx);
 	res.json({ status: next });
-});
+}, undefined, true);
 secured("post", "/staff/requests/:id/assign", "assign", async (req, res, context) => {
 	const record = await requestFor(context, req.params.id, true);
 	const assigned = identifier(req.body.assigned_to);
@@ -536,6 +568,7 @@ secured("post", "/staff/requests/:id/assign", "assign", async (req, res, context
 secured("post", "/staff/requests/:id/notes", null, async (req, res, context) => {
 	const record = await requestFor(context, req.params.id, true);
 	const notes = text(req.body.notes, "notes", 5000);
+	await rows("UPDATE civic.records SET updated_at = now() WHERE id = :id RETURNING id", { id: record.id }, context.tx);
 	await rows(`INSERT INTO civic.history(id, tenant_id, request_id, actor, actor_role, previous_status, new_status, notes, note_visibility, assigned_to)
 		VALUES (:history, :tenant, :id, :actor, :role, :status, :status, :notes, :visibility, :assigned) RETURNING id`, {
 		history: randomUUID(), tenant: context.portal.id, id: record.id, actor: context.member.id,
@@ -543,7 +576,7 @@ secured("post", "/staff/requests/:id/notes", null, async (req, res, context) => 
 		visibility: noteVisibility(req.body.note_visibility, context), assigned: record.assigned_to
 	}, context.tx);
 	res.status(201).json({ recorded: true });
-}, rateLimit);
+}, rateLimit, true);
 secured("post", "/staff/requests/:id/field-photo", null, async (req, res, context) => {
 	const record = await requestFor(context, req.params.id, true);
 	const fieldPhoto = photo(req.body.photo);
@@ -559,7 +592,15 @@ secured("post", "/staff/requests/:id/field-photo", null, async (req, res, contex
 		longitude = :longitude, latitude = :latitude, updated_at = now()
 		WHERE id = :id RETURNING id`, { id: record.id, fieldPhoto, ...point }, context.tx);
 	res.status(201).json({ uploaded: true, ...point });
-}, rateLimit);
+}, rateLimit, true);
+secured("post", "/staff/requests/:id/location", null, async (req, res, context) => {
+	const record = await requestFor(context, req.params.id, true);
+	if (record.assigned_to !== context.member.id) throw new CivicError(403, "This ticket is no longer assigned to you");
+	const point = coordinates(req.body.longitude, req.body.latitude);
+	await rows(`UPDATE civic.records SET longitude = :longitude, latitude = :latitude, updated_at = now()
+		WHERE id = :id RETURNING id`, { id: record.id, ...point }, context.tx);
+	res.json({ saved: true, ...point });
+}, undefined, true);
 secured("post", "/staff/requests/:id/archive", "read", async (req, res, context) => {
 	const record = await requestFor(context, req.params.id, true);
 	if (record.assigned_to && !context.permissions.includes("read")) throw new CivicError(403, "Permission denied");
