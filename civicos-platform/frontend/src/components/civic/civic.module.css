@@ -56,7 +56,7 @@
 .success,.error,.emergency { padding:16px 20px; border-radius:8px; margin:12px 0 20px; font-size:14px; }
 .success { background:#e0f5ea; color:#1b6144; }
 .success code { display:block; padding:12px 0; font-size:14px; overflow-wrap:anywhere; }
-.error { position:fixed; z-index:100; top:50%; left:50%; width:min(440px,calc(100vw - 40px)); margin:0; transform:translate(-50%,-50%); background:#fff0ec; color:#a73521; border:1px solid #f2c9bd; box-shadow:0 12px 36px #172c3433; text-align:center; }
+.error { width:min(640px,100%); margin:12px auto 20px; background:#fff0ec; color:#a73521; border:1px solid #f2c9bd; text-align:center; }
 .emergency { background:#fff3dc; color:#8a5b14; }
 .timeline { list-style:none; padding:12px 0 0 18px; }
 .timeline li { border-left:2px solid #c7e4de; padding:0 0 24px 20px; position:relative; }

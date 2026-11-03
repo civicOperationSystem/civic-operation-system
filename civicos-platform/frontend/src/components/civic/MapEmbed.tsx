@@ -40,11 +40,13 @@ export default function MapEmbed({ portal, token, revision = 0, center, zoom, ma
       token: token || null, selectable, revision, marker: marker || null, focused, locked: mapLocked,
     }, new URL(mapUrl, window.location.origin).origin);
   }, [mapUrl, portal, token, ready, revision, selectable, center, zoom, marker, focused, mapLocked]);
-  return <div className={styles.mapFrame}>
+  return <>
     {error && <p role="alert" className={styles.error}>{error}</p>}
-    {locked && <button type="button" className={styles.mapToggle} aria-pressed={interactionEnabled}
-      onClick={() => setInteractionEnabled(value => !value)}>{interactionEnabled ? 'Lock map interaction' : 'Enable map interaction'}</button>}
-    <iframe ref={iframe} src={mapUrl} title="Interactive CivicOS community map" allow="geolocation"
-      onLoad={() => { setReady(false); iframe.current?.contentWindow?.postMessage({ type: 'civic-map-handshake' }, new URL(mapUrl, window.location.origin).origin); }} />
-  </div>;
+    <div className={styles.mapFrame}>
+      {locked && <button type="button" className={styles.mapToggle} aria-pressed={interactionEnabled}
+        onClick={() => setInteractionEnabled(value => !value)}>{interactionEnabled ? 'Lock map interaction' : 'Enable map interaction'}</button>}
+      <iframe ref={iframe} src={mapUrl} title="Interactive CivicOS community map" allow="geolocation"
+        onLoad={() => { setReady(false); iframe.current?.contentWindow?.postMessage({ type: 'civic-map-handshake' }, new URL(mapUrl, window.location.origin).origin); }} />
+    </div>
+  </>;
 }
