@@ -271,16 +271,18 @@ export default function Workspace({ field = false }: { field?: boolean }) {
         {detail && ['requests', 'calendar', 'map'].includes(view) && <article className={`${styles.card} ${styles.detail}`}>
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{stateLabel(detail.status)}</span><h3>{detail.title}</h3></div><button onClick={() => setDetail(null)} className={styles.secondary}>Close</button></div>
           {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload up to three field photos (PNG, JPEG or WebP, up to 5 MB each). Photos over 512 KB are compressed to JPEG before upload. Field photos are public when the request is verified.</p>
+            <label>Completion photo ({fieldPhotoCount}/3)<input className={styles.photoPicker} type="file" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy || fieldPhotoCount >= 3} onChange={event => {
+              const file = event.currentTarget.files?.[0] || null;
+              event.currentTarget.value = '';
+              void uploadFieldPhoto(file);
+            }} /></label>
+            {fieldPhotoCount >= 3 && <p className={styles.hint}>All three field photo slots are filled.</p>}
             {fieldPoint && !editingFieldLocation ?
               <><MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint} marker={fieldPoint} zoom={16} focused locked />
                 <button className={styles.secondary} disabled={busy} onClick={() => setEditingFieldLocation(true)}>Change location</button></> :
               <MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint || session.portal.settings.center} zoom={fieldPoint ? 16 : undefined} onPoint={point => { setFieldPoint(point); setEditingFieldLocation(false); }} />}
             <div className={styles.inline}><label>Longitude<input readOnly value={fieldPoint?.[0] ?? ''} placeholder="Click the map" /></label><label>Latitude<input readOnly value={fieldPoint?.[1] ?? ''} placeholder="Click the map" /></label></div>
-            <label>Completion photo ({fieldPhotoCount}/3)<input type="file" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy || fieldPhotoCount >= 3} onChange={event => {
-              const file = event.currentTarget.files?.[0] || null;
-              event.currentTarget.value = '';
-              void uploadFieldPhoto(file);
-            }} /></label></section>}
+            </section>}
           <div className={!field ? styles.staffTicketLayout : undefined}>
             <div>
               <p>{detail.description}</p><p>{detail.location}</p><code>{detail.reference}</code>

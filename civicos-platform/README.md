@@ -10,6 +10,8 @@ The GIS project is embedded through an origin-checked message channel. Session t
 
 Residents can submit up to three photos, each up to 2 MiB. Field workers can add up to three more, each up to 5 MiB. Photos over 512 KiB are compressed to JPEG in the browser before upload. Resident photos are public after review; field photos become public when the current request state is `verified`. Reopening a request hides field photos until it is verified again. Private tracking remains photo-free.
 
+Open an assigned ticket in the field workspace to add completion photos. The photo picker appears above the location map and indicates when all three field photo slots are filled.
+
 Archiving removes a request permanently from staff and field workspaces while preserving its public ticket, map marker, and status history in the public portal.
 
 Only CivicOS is shipped; the legacy collaboration UI and microservices have been removed.
