@@ -145,9 +145,32 @@ Set these project environment variables:
 - **CivicOS frontend:** `CIVIC_API_URL` (the API deployment origin, without a path), `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_CIVIC_MAP_URL` (the map deployment URL ending in `/civic`).
 - **CivicOS map:** `CIVIC_API_URL` (same API deployment origin) and `NEXT_PUBLIC_CIVIC_PARENT_ORIGINS` (the frontend’s production origin).
 
+| Variable | Project / stage | Production configuration |
+| --- | --- | --- |
+| `CIVIC_DATABASE_URL` | API runtime | PostgreSQL URL for the non-owner `civic_app` role; use the Supabase session pooler for serverless deployments. |
+| `CIVIC_DATABASE_SSL_CA` | API runtime and migration, if needed | PEM root CA for the selected database endpoint when it is not trusted by the runtime. Keep certificate verification enabled. |
+| `JWT_SECRET` | API runtime | Private, randomly generated secret of at least 32 characters. |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | API runtime | Supabase project URL and publishable/anon key used to verify sign-in identities. |
+| `CIVIC_PLATFORM_ADMIN_EMAIL` | API runtime | Verified email address of the platform owner. |
+| `CIVIC_API_URL` | Frontend and map runtime | HTTPS origin of the API deployment, without a trailing path. |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Frontend build | Same Supabase project URL and publishable/anon key; these are public client settings, not service-role credentials. |
+| `NEXT_PUBLIC_CIVIC_MAP_URL` | Frontend build | HTTPS map deployment URL ending in `/civic`. |
+| `NEXT_PUBLIC_CIVIC_PARENT_ORIGINS` | Map build | Comma-separated, exact HTTPS origins allowed to embed the map; include the production frontend origin. |
+| `CIVIC_ADMIN_DATABASE_URL` | Trusted migration only | Privileged database URL for schema migration and provisioning. Never configure it on a deployed API runtime. |
+
 The frontend’s Next.js rewrite proxies `/api/civic` to the backend, so browser API requests remain same-origin and the API does not need public CORS access. Use HTTPS Vercel and Supabase URLs in production. Keep `CIVIC_ADMIN_DATABASE_URL` out of Vercel runtime variables; use it only in the trusted, one-time schema migration/provisioning environment. Set the Supabase Auth site URL to your frontend domain and allowlist `https://your-frontend-domain.example/**`. Add the production frontend domain to the map’s allowed parent origins.
 
 Vercel serverless functions can scale out, so the API uses a small per-instance PostgreSQL pool. Choose a Supabase connection/pooler URL appropriate for serverless deployments, and do not expose the database owner connection to the API.
+
+#### Production deployment sequence
+
+1. Create the Supabase project, configure Auth email delivery and the HTTPS frontend redirect allowlist, and create the runtime `civic_app` database role through the trusted provisioning process.
+2. Set `CIVIC_ADMIN_DATABASE_URL` and `CIVIC_DATABASE_URL` only in a trusted migration environment, then run the schema-only provisioning command in [Platform owner and organization administration](#platform-owner-and-organization-administration). Do not point the migration at production until its backup and recovery process is in place.
+3. Configure the environment variables above in the matching Vercel projects. Add `CIVIC_DATABASE_SSL_CA` to the API project only if the database endpoint needs a custom CA; keep certificate and hostname verification enabled.
+4. Deploy the API, frontend, and map projects. Confirm the frontend and map use the production HTTPS API and that the map’s allowed parent origins contain the exact frontend origin.
+5. Check API readiness with the command below, then sign in as the configured platform owner and create an organization. Verify public portal access and organization-scoped staff access before inviting users.
+
+Vercel builds the public `NEXT_PUBLIC_*` settings into the frontend/map bundles. Update those settings and rebuild the corresponding project after changing domains or Supabase projects.
 
 ### Post-deployment readiness
 
@@ -232,9 +255,13 @@ The browser test starts temporary servers on ports 3330, 3310 and 3311, creates 
 
 `npm test` in `civicos-backend` includes the API end-to-end suite (`tests/*.e2e.test.ts`); run it alone with `npm run test:e2e`. The browser suite `tests/e2e/map.spec.mjs` covers map pins on public information, calendar dates and archiving, and needs internet access for map tiles.
 
+The backend tests include explicit cross-organization checks: `civic.test.ts` verifies tenant isolation for list and direct request access, assignment, tracking, unscoped SQL and forged tenant inserts. It also checks platform-owner and organization-role boundaries, unauthorized workflow transitions, field permissions, and chat visibility. `public-content-map.e2e.test.ts` checks that map content stays within its organization and that users without publish permission cannot publish map pins. These suites exercise representative API routes and database row-level security; they are not a substitute for reviewing authorization when adding or changing routes.
+
 ### Continuous integration
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pushes and pull requests to `main`: type-check, unit tests and builds for each project, the backend Vitest suites and the Playwright browser suite against a `postgres:15` service, and a build-only check of each `Dockerfile.civic`. It does not deploy. Failed browser runs upload traces as the `playwright-results` artifact.
+
+The backend CI job runs the same permission and tenant-isolation tests described above. Keep new route authorization and cross-tenant access cases in the backend Vitest suites so they run on every pull request to `main`.
 
 ```powershell
 docker stop civicos-tests
