@@ -154,7 +154,6 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         {['overview', 'map', 'calendar', 'report'].map(tab => <button key={tab} aria-current={view === tab ? 'page' : undefined} onClick={() => { setView(tab); setError(''); }}>{({ overview: 'Community hub', map: 'Explore the map', calendar: 'Public requests', report: 'Report a problem' })[tab]}</button>)}
       </nav>
       <div className={styles.body}>
-        {error && <p role="alert" className={styles.error}>{error}</p>}
         {content.filter(item => item.kind === 'emergency').map(item => <aside key={item.id} className={styles.emergency}><strong>Emergency notice · {item.title}</strong><p>{item.description}</p></aside>)}
         {view === 'overview' && <>
           <div className={styles.sectionTitle}><div><p className={styles.eyebrow}>WHAT'S HAPPENING</p><h2>Your community hub</h2></div>
@@ -172,6 +171,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         </>}
         {view === 'map' && <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>EXPLORE YOUR COMMUNITY</p><h2>Places, infrastructure & public work</h2></div></div>
           <p className={styles.hint}>This map is read-only by default. Use the zoom controls to inspect an area, or enable interaction to browse public locations and open a request.</p><MapEmbed portal={portal} locked onSelect={id => void selectPublicRequest(id)} />
+          {error && <p role="alert" className={styles.error}>{error}</p>}
           <section className={styles.publicTickets}><h3>Public request tickets</h3>{!calendarRequests.length ? <p className={styles.hint}>There are no public request tickets yet.</p> :
             <div className={styles.cards}>{calendarRequests.map(record => <button key={record.id} className={styles.card} onClick={() => void selectPublicRequest(record.id)}><span className={styles.tag}>{record.status}</span><strong>{record.title}</strong><small>{record.category || 'Community request'}</small><span>View public ticket details</span></button>)}</div>}
           </section></>}
@@ -204,6 +204,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             {settings?.anonymous && <label className={styles.checkbox}><input type="checkbox" checked={anonymous} onChange={event => setAnonymous(event.target.checked)} /> Report anonymously</label>}
             {!anonymous && <><label>Your name<input name="name" required maxLength={100} autoComplete="name" /></label><label>Email<input name="email" type="email" required maxLength={254} autoComplete="email" /></label><label>Phone (optional)<input name="phone" maxLength={50} type="tel" autoComplete="tel" /></label></>}
             <button disabled={busy} className={styles.primary}>{busy ? 'Submitting…' : 'Submit request'}</button>
+            {error && <p role="alert" className={styles.error}>{error}</p>}
           </form></section><aside><h3>Pin the location</h3><p className={styles.hint}>Click on the map to add coordinates. Contact details are never published.</p><MapEmbed portal={portal} onPoint={setPoint} /></aside></div>}
       </div>
       {publicRequestDetail && <div className={styles.modalBackdrop} role="presentation">
@@ -227,6 +228,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
               <p className={styles.hint}>A map location was not provided for this information.</p>}</aside></div>
         </section>
       </div>}
+      {error && view !== 'report' && view !== 'map' && <p role="alert" className={styles.error}>{error}</p>}
     </>}
     <footer className={styles.footer}><strong>CivicOS</strong><span>Open infrastructure for everyday community life.</span><span>Public portal · No account required</span></footer>
   </main>;

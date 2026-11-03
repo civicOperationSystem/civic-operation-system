@@ -150,7 +150,6 @@ export default function ChatPanel({ token, session }: { token: string; session: 
           <p>{activeChannel?.description || (activeDirect ? 'Private conversation — visible only to you and this teammate.' : `${session.portal.name} staff messages`)}</p></div>
         <small>Updates every few seconds</small>
       </header>
-      {error && <p role="alert" className={styles.error}>{error}</p>}
       <ol className={styles.chatMessages} aria-label="Chat messages" aria-live="polite">
         {messages.map(message => <li key={message.id} className={message.sender_id === session.user.id ? styles.ownMessage : ''}>
           <div className={styles.messageMeta}><strong>{message.sender_id === session.user.id ? 'You' : message.sender_name}</strong><time dateTime={message.created_at}>{displayDate(message.created_at, session.portal.settings)}</time></div>
@@ -164,6 +163,7 @@ export default function ChatPanel({ token, session }: { token: string; session: 
         <textarea id="civic-chat-message" rows={2} maxLength={4000} value={draft} disabled={!conversation || busy}
           onChange={event => setDraft(event.target.value)} placeholder={conversation ? 'Write a message…' : 'Choose a channel or teammate.'} />
         <button className={styles.primary} disabled={!conversation || busy || !draft.trim()}>Send</button>
+        {error && <p role="alert" className={styles.error}>{error}</p>}
       </form>
     </div>
   </section>;

@@ -171,8 +171,9 @@
 .messageMeta time { color:#92a0a5; font-size:9px; }
 .chatMessages li p { white-space:pre-wrap; font-size:13px; line-height:1.55; }
 .chatEmpty { align-self:center; padding:60px 20px; color:#82949b; text-align:center; font-size:12px; }
-.chatComposer { display:flex; align-items:flex-end; gap:12px; padding:14px 18px; border-top:1px solid #e8edef; }
+.chatComposer { display:flex; align-items:flex-end; flex-wrap:wrap; gap:12px; padding:14px 18px; border-top:1px solid #e8edef; }
 .chatComposer textarea { min-height:46px; max-height:140px; resize:vertical; }
+.chatComposer .error { flex-basis:100%; margin:0; }
 .srOnly { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; clip-path:inset(50%); }
 @media(max-width:900px) { .cards { grid-template-columns:repeat(2,1fr); }.heroAside { display:none; }.workspace { grid-template-columns:180px 1fr; }.main { padding:22px; }.twoColumns { gap:24px; } }
 @media(max-width:640px) { .modal { width:100%; }.ticketModalLayout { grid-template-columns:1fr; } }

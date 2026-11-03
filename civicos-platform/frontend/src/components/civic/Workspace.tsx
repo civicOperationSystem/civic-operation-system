@@ -217,10 +217,10 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       <form onSubmit={login} className={styles.form}><label>Organization{linkedOrganization ?
         <input readOnly value={organizationName || slug} /> :
         <input required value={slug} onChange={event => setSlug(event.target.value)} pattern="[a-z0-9\-]{3,60}" />}</label><label>Email<input name="email" required type="email" autoComplete="email" /></label>
-        <button disabled={busy} className={styles.primary}>{busy ? 'Sending link…' : 'Email me a sign-in link'}</button></form>
+        <button disabled={busy} className={styles.primary}>{busy ? 'Sending link…' : 'Email me a sign-in link'}</button>
+        {error && <p role="alert" className={styles.error}>{error}</p>}</form>
       <p className={styles.hint}>Sign-in links are one-time use. Sign out when you finish, especially on shared devices.</p>
       {notice && <p role="status" className={styles.success}>{notice}</p>}
-      {error && <p role="alert" className={styles.error}>{error}</p>}
     </section> : <div className={styles.workspace}>
       <aside className={styles.sidebar}><h3>{session.portal.name}</h3><p>{session.user.email}<br />{session.user.role} · {field ? 'Field workspace' : 'Operations'}</p>
         {(field ? ['requests', 'calendar', 'map', ...(has('chat') ? ['chat'] : [])] : [
@@ -233,7 +233,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       <section className={styles.main}>
         {view === 'chat' && has('chat') ? <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>TEAM COMMUNICATION</p><h2>{field ? 'Field team chat' : 'Staff chat'}</h2></div></div><ChatPanel token={token} session={session} /></> : <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>{field ? 'OUT IN THE COMMUNITY' : 'OPERATIONS OVERVIEW'}</p><h2>{({ requests: field ? 'Your work, in one place' : 'Service requests', calendar: 'Request calendar', map: 'Operational map', content: 'Public information', members: 'People & access', settings: 'Organization settings' })[view]}</h2></div>
           <button disabled={busy} className={styles.secondary} onClick={() => void action(() => load(), 'Workspace refreshed')}>Refresh</button></div>
-        {error && <p role="alert" className={styles.error}>{error}</p>}
+        {!detail && error && <p role="alert" className={styles.error}>{error}</p>}
         {notice && <p role="status" className={styles.success}>{notice}</p>}
         {view === 'requests' && <>
           <div className={styles.stats}><div className={styles.stat}><span>Requests on this page</span><strong>{field ? records.filter(record => record.assigned_to === session.user.id).length : records.length}</strong></div>
@@ -323,6 +323,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
             }, 'Map visibility updated');
           }} /> Publish completed ticket description to the public portal</label>}
           {has('read') && <button disabled={busy} className={styles.secondary} onClick={() => void archive()}>Archive request</button>}
+          {error && <p role="alert" className={styles.error}>{error}</p>}
           <h3>Audit trail</h3><ol className={styles.timeline}>{detail.history.map(event => <li key={event.id}><strong>{stateLabel(event.previous_status)} → {stateLabel(event.new_status)}</strong><small>{memberLabel(event.actor)} · {displayDate(event.created_at, session.portal.settings)}</small>{event.assigned_to && <small>Assigned: {memberLabel(event.assigned_to)}</small>}{event.notes && <p>{event.notes}</p>}</li>)}</ol>
         </article>}
         {view === 'content' && has('publish') && <div className={styles.twoColumns}><section><h3>{editingContent ? 'Edit community information' : 'Publish community information'}</h3><form key={editingContent?.id || 'new'} className={styles.form} onSubmit={event => {

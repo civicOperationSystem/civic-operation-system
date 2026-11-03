@@ -226,12 +226,11 @@ export default function PlatformAdmin() {
         <form onSubmit={login} className={styles.form}>
           <label>Platform owner email<input name="email" required type="email" autoComplete="email" /></label>
           <button disabled={busy} className={styles.primary}>{busy ? 'Sending link…' : 'Email me a sign-in link'}</button>
+          {error && <p role="alert" className={styles.error}>{error}</p>}
         </form>}
       {notice && <p role="status" className={styles.success}>{notice}</p>}
-      {error && <p role="alert" className={styles.error}>{error}</p>}
     </section> : <section className={styles.body}>
       <div className={styles.sectionTitle}><div><p className={styles.eyebrow}>PLATFORM OWNER</p><h2>Organization administration</h2></div></div>
-      {error && <p role="alert" className={styles.error}>{error}</p>}
       {notice && <p role="status" className={styles.success}>{notice}</p>}
       <div className={styles.twoColumns}>
         <section>
@@ -243,6 +242,7 @@ export default function PlatformAdmin() {
             <label>Bottom admin email<input name="admin_email" required type="email" maxLength={254} /></label>
             <label>Custom domain (optional)<input name="domain" maxLength={253} placeholder="community.example.org" /></label>
             <button disabled={busy} className={styles.primary}>Create organization</button>
+            {error && <p role="alert" className={styles.error}>{error}</p>}
           </form>
         </section>
         <section>
