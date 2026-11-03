@@ -301,6 +301,21 @@ describe("CivicOS end-to-end workflow and private-safe tracking", () => {
 		expect(Object.keys(map.body.features[0].properties).sort()).toEqual(["id", "kind", "location", "status", "title"]);
 		expect(map.body.features[0].properties.location).toBeNull();
 	});
+	it("keeps an archived ticket public while removing it from staff and field access", async () => {
+		expect((await api("post", `/staff/requests/${requestId}/archive`)).status).toBe(200);
+		expect((await api("get", "/staff/requests")).body).toEqual([]);
+		expect((await api("get", "/staff/requests", fieldToken)).body).toEqual([]);
+		expect((await api("get", `/staff/requests/${requestId}`)).status).toBe(404);
+		expect((await api("post", `/staff/requests/${requestId}/restore`)).status).toBe(404);
+
+		const calendar = await request(app).get(`/api/civic/public/${slugA}/requests/calendar`);
+		expect(calendar.body.some((record: { id: string }) => record.id === requestId)).toBe(true);
+		const detail = await request(app).get(`/api/civic/public/${slugA}/requests/${requestId}`);
+		expect(detail.status).toBe(200);
+		expect(detail.body.photos).toHaveLength(6);
+		const map = await request(app).get(`/api/civic/public/${slugA}/map`);
+		expect(map.body.features.some((feature: { id: string }) => feature.id === requestId)).toBe(true);
+	});
 });
 describe("Organization administration and public content", () => {
 	it("migrates organization chat permissions, provides a shared channel and enforces tenant isolation", async () => {

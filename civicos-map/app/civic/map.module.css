@@ -10,13 +10,16 @@
 .sidebar button { cursor:pointer; font:inherit; }
 .sidebar button:focus-visible { outline:3px solid #2563eb; outline-offset:2px; }
 .actions { display:flex; gap:8px; }
-.actions button,.sidebar form>button { padding:8px 10px; font-size:11px; border:1px solid #bdd8d0; border-radius:5px; background:#f1f8f5; color:#21695c; }
+.actions button,.sidebar form>button { padding:8px 10px; font-size:11px; border:1px solid #0d9488; border-radius:5px; background:#0d9488; color:#fff; }
+.actions button:nth-child(2) { border-color:#1d4ed8; background:#2563eb; }
+.actions button:hover:not(:disabled),.sidebar form>button:hover:not(:disabled) { filter:brightness(.92); }
 .sidebar button:disabled { opacity:.5; cursor:default; }
 .count { font-size:11px; margin:20px 0 10px; color:#6e8882; }
 .hint { font-size:11px; color:#6e8882; line-height:1.6; padding:8px 0; }
 .locations { list-style:none; padding:0; margin:0; }
 .locations li { border-top:1px solid #edf1ee; }
-.locations button { width:100%; text-align:left; background:white; border:0; padding:14px 0; display:flex; flex-direction:column; gap:5px; color:#244841; }
+.locations button { width:100%; text-align:left; background:#eff6ff; border:1px solid #bfdbfe; border-radius:5px; padding:14px 10px; display:flex; flex-direction:column; gap:5px; color:#1e3a5f; }
+.locations button:hover { background:#dbeafe; border-color:#2563eb; }
 .locations strong { font-size:12px; }
 .locations small { font-size:10px; color:#78958d; }
 .kind { text-transform:uppercase; font-size:8px; letter-spacing:1px; color:#0d9488; }

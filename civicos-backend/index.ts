@@ -75,7 +75,17 @@ app.use("/api/civic", (_req: Request, res: Response, next: NextFunction) => {
 	res.setHeader("Cache-Control", "no-store");
 	next();
 }, (req: Request, _res: Response, next: NextFunction) => {
-	if (["POST", "PUT"].includes(req.method) && (!req.body || typeof req.body !== "object" || Array.isArray(req.body))) {
+	if (!["POST", "PUT"].includes(req.method)) {
+		next();
+		return;
+	}
+	const hasBody = (Number(req.get("content-length") || 0) > 0) || !!req.get("transfer-encoding");
+	if (!hasBody && req.body === undefined) {
+		req.body = {};
+		next();
+		return;
+	}
+	if (!req.is("application/json") || !req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
 		next(new CivicError(400, "A JSON object request body is required"));
 		return;
 	}

@@ -157,7 +157,7 @@ function readyForPublicTicket(record: RecordRow, states: State[]): boolean {
 async function requestFor(context: Context, id: unknown, lock = false): Promise<RecordRow> {
 	requireOperations(context);
 	const [record] = await rows<RecordRow>(
-		`SELECT ${staffColumns} FROM civic.records WHERE id = :id AND kind = 'request'${scope(context)}${lock ? " FOR UPDATE" : ""}`,
+		`SELECT ${staffColumns} FROM civic.records WHERE id = :id AND kind = 'request' AND archived_at IS NULL${scope(context)}${lock ? " FOR UPDATE" : ""}`,
 		{ id: identifier(id), actor: context.member.id }, context.tx
 	);
 	if (!record) throw new CivicError(404, "Request not found");
@@ -213,7 +213,7 @@ civicRouter.get("/public/:slug/requests/calendar", endpoint(async (req, res) => 
 			`SELECT record.id, record.title, record.category, record.status, record.created_at,
 				(SELECT history.created_at FROM civic.history history WHERE history.request_id = record.id
 					AND history.new_status = 'completed' ORDER BY history.created_at DESC, history.id DESC LIMIT 1) AS completed_at
-			 FROM civic.records record WHERE record.kind = 'request' AND record.status <> 'submitted' AND record.archived_at IS NULL
+			 FROM civic.records record WHERE record.kind = 'request' AND record.status <> 'submitted'
 			 ORDER BY record.created_at DESC LIMIT 500`,
 			{}, tx));
 	res.json(records.map(record => ({
@@ -229,7 +229,7 @@ civicRouter.get("/public/:slug/requests/:id", endpoint(async (req, res) => {
 	const portal = await portalBySlug(req.params.slug);
 	const result = await tenantTransaction(portal.id, async tx => {
 		const [record] = await rows<Pick<RecordRow, "id" | "title" | "description" | "category" | "status" | "location" | "longitude" | "latitude" | "photos" | "field_photos" | "published" | "created_at" | "updated_at">>(
-			"SELECT id, title, description, category, status, location, longitude, latitude, photos, field_photos, published, created_at, updated_at FROM civic.records WHERE id = :id AND kind = 'request' AND status <> 'submitted' AND archived_at IS NULL",
+			"SELECT id, title, description, category, status, location, longitude, latitude, photos, field_photos, published, created_at, updated_at FROM civic.records WHERE id = :id AND kind = 'request' AND status <> 'submitted'",
 			{ id: identifier(req.params.id) }, tx);
 		if (!record) throw new CivicError(404, "Public request not found");
 		const history = await rows<{ new_status: string; created_at: string }>(
@@ -480,10 +480,7 @@ secured("get", "/staff/requests", null, async (req, res, context) => {
 	requireOperations(context);
 	const page = Number(req.query.page || 1);
 	if (!Number.isInteger(page) || page < 1 || page > 100000) throw new CivicError(400, "Invalid page");
-	const archived = req.query.archived === "true";
-	const includeArchived = req.query.archived === "all";
-	if ((archived || includeArchived) && !context.permissions.includes("manage")) throw new CivicError(403, "Permission denied");
-	res.json(await rows(`SELECT ${staffColumns} FROM civic.records WHERE kind = 'request'${includeArchived ? "" : ` AND archived_at IS ${archived ? "NOT " : ""}NULL`}${scope(context)}
+	res.json(await rows(`SELECT ${staffColumns} FROM civic.records WHERE kind = 'request' AND archived_at IS NULL${scope(context)}
 		ORDER BY created_at DESC LIMIT 100 OFFSET :offset`,
 		{ actor: context.member.id, offset: (page - 1) * 100 }, context.tx));
 });
@@ -568,12 +565,6 @@ secured("post", "/staff/requests/:id/archive", "read", async (req, res, context)
 	await rows("UPDATE civic.records SET archived_at = now(), archived_by = :actor, updated_at = now() WHERE id = :id RETURNING id",
 		{ id: record.id, actor: context.member.id }, context.tx);
 	res.json({ archived: true });
-});
-secured("post", "/staff/requests/:id/restore", "manage", async (req, res, context) => {
-	const record = await requestFor(context, req.params.id, true);
-	await rows("UPDATE civic.records SET archived_at = NULL, archived_by = NULL, updated_at = now() WHERE id = :id RETURNING id",
-		{ id: record.id }, context.tx);
-	res.json({ archived: false });
 });
 secured("post", "/staff/requests/:id/visibility", "publish", async (req, res, context) => {
 	const record = await requestFor(context, req.params.id);
@@ -836,7 +827,7 @@ civicRouter.get("/public/:slug/map", endpoint(async (req, res) => {
 	const portal = await portalBySlug(req.params.slug);
 	const records = await tenantTransaction(portal.id, tx => rows<RecordRow>(
 		`SELECT id, kind, title, status, location, longitude, latitude FROM civic.records
-		 WHERE longitude IS NOT NULL AND (published OR (kind = 'request' AND status <> 'submitted' AND archived_at IS NULL))
+		 WHERE longitude IS NOT NULL AND (published OR (kind = 'request' AND status <> 'submitted'))
 		 ORDER BY created_at DESC, id LIMIT 5001`, {}, tx));
 	res.json(geojson(records, portal.settings.states));
 }));
@@ -851,13 +842,17 @@ secured("get", "/staff/map", null, async (_req, res, context) => {
 
 export function civicErrorHandler(error: unknown, _req: Request, res: Response, _next: NextFunction): void {
 	const known = error instanceof CivicError;
-	const databaseCode = error && typeof error === "object" && "original" in error ?
-		(error.original as { code?: string } | undefined)?.code : undefined;
+	const databaseError = error && typeof error === "object" && "original" in error ?
+		(error.original as { code?: string; constraint?: string } | undefined) : undefined;
+	const databaseCode = databaseError?.code;
+	const photoLimitMigrationRequired = databaseCode === "23514" && databaseError?.constraint === "records_photo_limit_check";
 	const parseStatus = error && typeof error === "object" && "type" in error ?
 		error.type === "entity.parse.failed" ? 400 : error.type === "entity.too.large" ? 413 : null : null;
-	const status = known ? error.status : parseStatus || (databaseCode === "23505" ? 409 : 500);
+	const status = known ? error.status : parseStatus || (databaseCode === "23505" || photoLimitMigrationRequired ? 409 : 500);
 	const message = known ? error.message : status === 400 ? "Invalid JSON request body" :
-		status === 413 ? "Request exceeds the 3 MB limit" : status === 409 ? "This record already exists" : "CivicOS could not complete this operation";
+		status === 413 ? "Request exceeds the 3 MB limit" :
+			photoLimitMigrationRequired ? "The database must be migrated before resident and field photos can be stored separately" :
+				status === 409 ? "This record already exists" : "CivicOS could not complete this operation";
 	logger.error("CivicOS operation failed", {
 		status, message,
 		...(status === 500 ? { error: error instanceof Error ? error.message : String(error), databaseCode } : {})

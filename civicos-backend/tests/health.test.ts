@@ -57,4 +57,23 @@ describe("CivicOS readiness endpoint", () => {
 		expect(response.body).toEqual({ service: "CivicOS", status: "ok" });
 		expect(civicDatabase.query).toHaveBeenCalledWith("SELECT 1");
 	});
+
+	it("allows body-less actions such as archive to reach their route", async () => {
+		vi.mocked(verifyCivicDatabase).mockResolvedValue();
+
+		const response = await request(app).post("/api/civic/not-a-route");
+
+		expect(response.status).toBe(404);
+		expect(response.body).toEqual({ message: "Endpoint not found" });
+	});
+
+	it("rejects a non-JSON request body before routing", async () => {
+		vi.mocked(verifyCivicDatabase).mockResolvedValue();
+
+		const response = await request(app).post("/api/civic/not-a-route")
+			.set("Content-Type", "text/plain").send("not json");
+
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({ message: "A JSON object request body is required" });
+	});
 });
