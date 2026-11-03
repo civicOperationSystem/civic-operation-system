@@ -4,7 +4,7 @@ export type MapFeature = {
   properties: { id: string; kind: string; title: string; status: string | null; location: string | null };
 };
 export type MapCollection = { type: 'FeatureCollection'; features: MapFeature[]; truncated?: boolean };
-export type MapContext = { slug: string; center: [number, number]; zoom?: number | null; marker?: [number, number] | null; token: string | null; selectable: boolean; focused?: boolean };
+export type MapContext = { slug: string; center: [number, number]; zoom?: number | null; marker?: [number, number] | null; token: string | null; selectable: boolean; focused?: boolean; locked?: boolean };
 function isPoint(value: unknown): value is [number, number] {
   return Array.isArray(value) && value.length === 2 &&
     value.every(point => typeof point === 'number' && Number.isFinite(point)) &&
@@ -19,7 +19,9 @@ export function isMapContext(value: unknown): value is MapContext & { type: stri
     (item.zoom === undefined || item.zoom === null || (typeof item.zoom === 'number' && Number.isFinite(item.zoom) && item.zoom >= 1 && item.zoom <= 19)) &&
     (item.token === null || (typeof item.token === 'string' && item.token.length < 4096)) &&
     (item.focused === undefined || typeof item.focused === 'boolean') &&
+    (item.locked === undefined || typeof item.locked === 'boolean') &&
     (!item.focused || (isPoint(item.marker) && !item.selectable)) &&
+    (!item.locked || !item.selectable) &&
     typeof item.selectable === 'boolean';
 }
 export function filterFeatures(data: MapCollection, kind: string, status: string, search: string): MapCollection {

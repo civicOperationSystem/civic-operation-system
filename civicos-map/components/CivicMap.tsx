@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { GeoJSONSource, Map as MapInstance, Marker as MapMarker } from 'maplibre-gl';
+import type { GeoJSONSource, GeolocateControl as GeolocateControlInstance, Map as MapInstance, Marker as MapMarker } from 'maplibre-gl';
 import { filterFeatures, isMapContext, MapCollection, MapContext, MapFeature } from '@/lib/civic-map';
 import styles from '@/app/civic/map.module.css';
 
@@ -9,6 +9,7 @@ export default function CivicMap() {
   const container = useRef<HTMLDivElement>(null);
   const instance = useRef<MapInstance | null>(null);
   const pin = useRef<MapMarker | null>(null);
+  const geolocate = useRef<GeolocateControlInstance | null>(null);
   const [map, setMap] = useState<MapInstance | null>(null);
   const [context, setContext] = useState<MapContext | null>(null);
   const contextRef = useRef<MapContext | null>(null);
@@ -70,8 +71,9 @@ export default function CivicMap() {
         center: [-73.98, 40.75], zoom: 12, minZoom: 1, maxZoom: 19,
       });
       instance.current = current;
-      current.addControl(new NavigationControl(), 'top-right');
-      current.addControl(new GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'top-right');
+      current.addControl(new NavigationControl({ showCompass: false }), 'top-right');
+      geolocate.current = new GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true });
+      current.addControl(geolocate.current, 'top-right');
       current.getCanvas().setAttribute('aria-label', 'Interactive community infrastructure and service request map');
       current.on('error', event => {
         console.error('CivicOS map resource failed', event.error);
@@ -93,6 +95,7 @@ export default function CivicMap() {
           'circle-color': ['match', ['get', 'kind'], 'request', '#e08d28', 'facility', '#457ad0', 'infrastructure', '#8460ad', 'emergency', '#d44545', '#0d9488'],
         } });
         current.on('click', 'clusters', async event => {
+          if (contextRef.current?.locked) return;
           const feature = event.features?.[0];
           if (!feature || feature.geometry.type !== 'Point' || !current) return;
           try {
@@ -104,6 +107,7 @@ export default function CivicMap() {
           }
         });
         current.on('click', 'places', event => {
+          if (contextRef.current?.locked) return;
           const feature = event.features?.[0];
           if (!feature || feature.geometry.type !== 'Point' || !current) return;
           const properties = feature.properties;
@@ -117,7 +121,7 @@ export default function CivicMap() {
           if (properties?.kind === 'request') send({ type: 'civic-map-select', id: properties.id });
         });
         current.on('click', event => {
-          if (!current || contextRef.current?.focused) return;
+          if (!current || contextRef.current?.focused || contextRef.current?.locked) return;
           const point: [number, number] = [Number(event.lngLat.wrap().lng.toFixed(6)), Number(event.lngLat.lat.toFixed(6))];
           setSelectedPoint(point);
           pin.current?.remove();
@@ -125,7 +129,7 @@ export default function CivicMap() {
           if (contextRef.current?.selectable) send({ type: 'civic-map-point', point });
         });
         for (const layer of ['places', 'clusters']) {
-          current.on('mouseenter', layer, () => { if (current) current.getCanvas().style.cursor = 'pointer'; });
+          current.on('mouseenter', layer, () => { if (current) current.getCanvas().style.cursor = contextRef.current?.locked ? '' : 'pointer'; });
           current.on('mouseleave', layer, () => { if (current) current.getCanvas().style.cursor = ''; });
         }
         setMap(current);
@@ -136,7 +140,7 @@ export default function CivicMap() {
       console.error('CivicOS map failed to initialize', failure);
       if (active) setMapError('Interactive map could not initialize. Use the authorized location list.');
     });
-    return () => { active = false; observer?.disconnect(); pin.current?.remove(); current?.remove(); instance.current = null; };
+    return () => { active = false; observer?.disconnect(); pin.current?.remove(); current?.remove(); geolocate.current = null; instance.current = null; };
   }, []);
   useEffect(() => {
     if (!context) return;
@@ -157,6 +161,18 @@ export default function CivicMap() {
     }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
   }, [context, revision]);
+  useEffect(() => {
+    if (!map || !context) return;
+    const interactions = [map.dragPan, map.scrollZoom, map.boxZoom, map.doubleClickZoom, map.keyboard, map.touchZoomRotate];
+    for (const interaction of interactions) {
+      if (context.locked) interaction.disable();
+      else interaction.enable();
+    }
+    if (context.locked && geolocate.current) {
+      map.removeControl(geolocate.current);
+      geolocate.current = null;
+    }
+  }, [map, context?.locked]);
   useEffect(() => {
     if (!map) return;
     (map.getSource('civic') as GeoJSONSource).setData(filtered);
@@ -185,9 +201,9 @@ export default function CivicMap() {
     ], { padding: 70, maxZoom: 16 });
   }
   return <main className={styles.shell}>
-    {!context?.focused && <header className={styles.header}><strong>CivicOS <span>Community map</span></strong><span className={styles.badge}>{context?.token ? 'Permission-aware workspace' : 'Public information only'}</span></header>}
-    <div className={context?.focused ? `${styles.layout} ${styles.focusedLayout}` : styles.layout}>
-      {!context?.focused && <aside className={styles.sidebar}>
+    {!context?.focused && !context?.locked && <header className={styles.header}><strong>CivicOS <span>Community map</span></strong><span className={styles.badge}>{context?.token ? 'Permission-aware workspace' : 'Public information only'}</span></header>}
+    <div className={context?.focused || context?.locked ? `${styles.layout} ${styles.focusedLayout}` : styles.layout}>
+      {!context?.focused && !context?.locked && <aside className={styles.sidebar}>
         {!context && <form onSubmit={event => { event.preventDefault(); setContext({ slug, token: null, center: [-73.98, 40.75], selectable: false }); }}><label>Organization<input required value={slug} onChange={event => setSlug(event.target.value)} pattern="[a-z0-9-]{3,60}" /></label><button>Open map</button></form>}
         <label>Search locations<input value={search} onChange={event => setSearch(event.target.value)} placeholder="Facility, infrastructure, request…" /></label>
         <label>Layer<select value={kind} onChange={event => setKind(event.target.value)}>{['all', 'request', 'facility', 'infrastructure', 'service', 'project', 'event', 'emergency'].map(item => <option key={item} value={item}>{item === 'all' ? 'All authorized layers' : item}</option>)}</select></label>

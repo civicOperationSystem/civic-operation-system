@@ -267,12 +267,12 @@ export default function Workspace({ field = false }: { field?: boolean }) {
             <div className={styles.calendar} role="grid" aria-label="Request calendar">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <strong key={day}>{day}</strong>)}{days.map(date => <section key={date.toISOString()} className={date.getMonth() === calendarMonth.getMonth() ? styles.calendarDay : `${styles.calendarDay} ${styles.calendarMuted}`}><time dateTime={date.toISOString().slice(0, 10)}>{date.getDate()}</time>{recordsForDay(date).map(record => <button key={record.id} onClick={() => void selectRequest(record.id)}>{record.title}<small>{stateLabel(record.status)}{record.archived_at ? ' · Archived' : ''}</small></button>)}</section>)}</div>
           </>;
         })()}
-        {view === 'map' && <><p className={styles.hint}>Your permissions determine which requests and locations appear. Select a request marker or a request in the location list to open its work record.</p><MapEmbed portal={session.portal} token={token} revision={revision} onSelect={id => void selectRequest(id)} /></>}
+        {view === 'map' && <><p className={styles.hint}>This map is read-only by default. Use the zoom controls to inspect an area, or enable interaction to browse locations and open a request.</p><MapEmbed portal={session.portal} token={token} revision={revision} locked onSelect={id => void selectRequest(id)} /></>}
         {detail && ['requests', 'calendar', 'map'].includes(view) && <article className={`${styles.card} ${styles.detail}`}>
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{stateLabel(detail.status)}</span><h3>{detail.title}</h3></div><button onClick={() => setDetail(null)} className={styles.secondary}>Close</button></div>
           {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload up to three field photos (PNG, JPEG or WebP, up to 5 MB each). Photos over 512 KB are compressed to JPEG before upload. Field photos are public when the request is verified.</p>
             {fieldPoint && !editingFieldLocation ?
-              <><MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint} marker={fieldPoint} zoom={16} focused />
+              <><MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint} marker={fieldPoint} zoom={16} focused locked />
                 <button className={styles.secondary} disabled={busy} onClick={() => setEditingFieldLocation(true)}>Change location</button></> :
               <MapEmbed portal={session.portal} token={token} revision={revision} center={fieldPoint || session.portal.settings.center} zoom={fieldPoint ? 16 : undefined} onPoint={point => { setFieldPoint(point); setEditingFieldLocation(false); }} />}
             <div className={styles.inline}><label>Longitude<input readOnly value={fieldPoint?.[0] ?? ''} placeholder="Click the map" /></label><label>Latitude<input readOnly value={fieldPoint?.[1] ?? ''} placeholder="Click the map" /></label></div>
@@ -294,7 +294,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
                 <><p className={styles.hint}>Pinned coordinates: {detail.latitude}, {detail.longitude}</p>
                   <MapEmbed portal={session.portal} token={token} revision={revision}
                     center={[detail.longitude, detail.latitude]} marker={[detail.longitude, detail.latitude]} zoom={16}
-                  focused /></> :
+                  focused locked /></> :
                 <p className={styles.hint}>A map location was not provided for this ticket.</p>}
             </aside>}
           </div>
