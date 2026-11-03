@@ -6,6 +6,7 @@ import MapEmbed from './MapEmbed';
 import styles from './civic.module.css';
 
 const kinds = ['all', 'service', 'announcement', 'event', 'project', 'facility', 'document', 'emergency', 'infrastructure'];
+const calendarMonths = Array.from({ length: 12 }, (_, month) => month);
 type PublicCalendarRequest = { id: string; title: string; category: string | null; status: string; created_at: string; completed_at: string | null };
 type PublicRequestDetail = PublicCalendarRequest & {
   description: string; location: string; longitude: number | null; latitude: number | null; updated_at: string;
@@ -185,9 +186,16 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             return date;
           });
           const dateKey = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: portal.settings.timezone }).format(date);
+          const currentYear = new Date().getFullYear();
+          const calendarYears = Array.from({ length: 21 }, (_, index) => currentYear - 10 + index);
+          if (!calendarYears.includes(calendarMonth.getFullYear())) calendarYears.push(calendarMonth.getFullYear());
+          calendarYears.sort((left, right) => left - right);
           return <section><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>PUBLIC WORK IN PROGRESS</p><h2>Public request calendar</h2></div></div>
             <p className={styles.hint}>Only requests explicitly approved for public display appear here.</p>
-            <div className={styles.inline}><button className={styles.secondary} onClick={() => setCalendarMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>Previous month</button><strong>{new Intl.DateTimeFormat(portal.settings.language, { month: 'long', year: 'numeric' }).format(calendarMonth)}</strong><button className={styles.secondary} onClick={() => setCalendarMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>Next month</button></div>
+            <div className={styles.calendarControls}><button className={styles.secondary} onClick={() => setCalendarMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>Previous month</button>
+              <label>Month<select aria-label="Calendar month" value={calendarMonth.getMonth()} onChange={event => setCalendarMonth(current => new Date(current.getFullYear(), Number(event.target.value), 1))}>{calendarMonths.map(month => <option key={month} value={month}>{new Intl.DateTimeFormat(portal.settings.language, { month: 'long' }).format(new Date(2000, month, 1))}</option>)}</select></label>
+              <label>Year<select aria-label="Calendar year" value={calendarMonth.getFullYear()} onChange={event => setCalendarMonth(current => new Date(Number(event.target.value), current.getMonth(), 1))}>{calendarYears.map(year => <option key={year} value={year}>{year}</option>)}</select></label>
+              <button className={styles.secondary} onClick={() => setCalendarMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>Next month</button></div>
             <div className={styles.calendar} role="grid" aria-label="Public request calendar">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <strong key={day}>{day}</strong>)}{days.map(date => <section key={date.toISOString()} className={date.getMonth() === calendarMonth.getMonth() ? styles.calendarDay : `${styles.calendarDay} ${styles.calendarMuted}`}><time dateTime={date.toISOString().slice(0, 10)}>{date.getDate()}</time>{calendarRequests.filter(record => dateKey(new Date(record.created_at)) === dateKey(date)).map(record => <button key={record.id} onClick={() => void selectPublicRequest(record.id)}><strong>{record.title}</strong><small>{record.status}{record.category ? ` · ${record.category}` : ''}{record.completed_at ? ` · Completed ${displayDate(record.completed_at, portal.settings)}` : ''}</small></button>)}</section>)}</div>
           </section>;
         })()}
