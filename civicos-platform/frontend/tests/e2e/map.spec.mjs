@@ -66,6 +66,7 @@ test('bottom administrator chooses and saves the community map view for embedded
   await expect(map.getByLabel('Current map view')).toHaveText(expectedView);
   await page.goto(`/portal/${slug}`);
   await page.getByRole('button', { name: 'Explore the map', exact: true }).click();
+  await page.getByRole('button', { name: 'Enable map interaction', exact: true }).click();
   await waitForMap(iframe);
   await expect(map.getByLabel('Current map view')).toHaveText(expectedView);
   await page.getByRole('button', { name: 'Report a problem', exact: true }).first().click();
