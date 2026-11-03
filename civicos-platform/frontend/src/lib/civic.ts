@@ -106,8 +106,8 @@ export async function readFieldPhoto(file: File): Promise<string> {
 }
 
 export async function readPublicPhoto(file: File): Promise<string> {
-  if (file.size > 2 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-    throw new Error('Choose a PNG, JPEG or WebP image no larger than 2 MB.');
+  if (file.size > 5 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    throw new Error('Choose a PNG, JPEG or WebP image no larger than 5 MB.');
   }
   return readFieldPhoto(file);
 }

@@ -207,7 +207,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             <label>Location<input name="location" required maxLength={500} placeholder="Street, landmark, or facility" /></label>
             <div className={styles.inline}><label>Longitude<input name="longitude" type="number" step="any" min={-180} max={180} value={point?.[0] ?? ''} onChange={event => setPoint([Number(event.target.value), point?.[1] ?? 0])} /></label>
               <label>Latitude<input name="latitude" type="number" step="any" min={-90} max={90} value={point?.[1] ?? ''} onChange={event => setPoint([point?.[0] ?? 0, Number(event.target.value)])} /></label></div>
-            <label>Photos (optional, up to 3; 2 MB each)<input name="photos" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label>
+            <label>Photos (optional, up to 3; 5 MB each)<input name="photos" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label>
             <p className={styles.hint}>Your photos will be visible to everyone once the request is reviewed. Do not include private or sensitive information. Photos over 512 KB are compressed to JPEG before upload.</p>
             {settings?.anonymous && <label className={styles.checkbox}><input type="checkbox" checked={anonymous} onChange={event => setAnonymous(event.target.checked)} /> Report anonymously</label>}
             {!anonymous && <><label>Your name<input name="name" required maxLength={100} autoComplete="name" /></label><label>Email<input name="email" type="email" required maxLength={254} autoComplete="email" /></label><label>Phone (optional)<input name="phone" maxLength={50} type="tel" autoComplete="tel" /></label></>}

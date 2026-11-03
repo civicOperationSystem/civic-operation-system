@@ -88,7 +88,7 @@ test('resident → staff → mobile field → verification → private-safe trac
   await page.getByRole('combobox', { name: 'Category', exact: true }).selectOption('Pothole');
   await page.getByLabel('What happened?').fill('A dangerous pothole outside the library.');
   await page.getByLabel('Location', { exact: true }).fill('Library entrance');
-  await page.getByLabel('Photos (optional, up to 3; 2 MB each)').setInputFiles(
+  await page.getByLabel('Photos (optional, up to 3; 5 MB each)').setInputFiles(
     Array.from({ length: 3 }, (_, index) => ({ name: `resident-${index}.png`, mimeType: 'image/png', buffer: png })),
   );
   const reportMap = page.frameLocator('iframe[title="Interactive CivicOS community map"]');
