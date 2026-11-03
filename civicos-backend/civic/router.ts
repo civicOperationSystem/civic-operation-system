@@ -5,7 +5,7 @@ import { Transaction } from "sequelize";
 import { rows, tenantTransaction } from "./database";
 import {
 	CivicError, Settings, State, Permission, permissions, defaultRoles, defaultSettings, identifier, text,
-	coordinates, trackingReference, safeUrl, validateSettings, fieldCanEnter, publicRequestPhotos
+	coordinates, trackingReference, safeUrl, calendarDate, validateSettings, fieldCanEnter, publicRequestPhotos
 } from "./domain";
 import { getSupabaseUser } from "./supabase-auth";
 import { logger } from "../utils/logger";
@@ -31,7 +31,8 @@ type HistoryRow = {
 	id: string; actor: string | null; actor_role: string | null; previous_status: string | null; new_status: string;
 	notes: string; note_visibility: "role_only" | "down_chain"; assigned_to: string | null; created_at: string;
 };
-const publicColumns = "id, kind, title, description, location, longitude, latitude, url, created_at, updated_at";
+// calendar_date is formatted in SQL so the driver never shifts the date-only value through a local-time Date.
+const publicColumns = "id, kind, title, description, location, longitude, latitude, url, to_char(calendar_date, 'YYYY-MM-DD') AS calendar_date, created_at, updated_at";
 const staffColumns = "id, kind, title, description, location, category, longitude, latitude, published, status, reference, assigned_to, archived_at, photo, photos, field_photo, field_photos, created_at, updated_at";
 const contentKinds = ["service", "announcement", "event", "project", "facility", "document", "emergency", "infrastructure"];
 export const civicRouter = Router();
@@ -645,17 +646,18 @@ secured("put", "/staff/settings", "manage", async (req, res, context) => {
 	res.json({ ...context.portal, name, settings });
 });
 secured("get", "/staff/content", "publish", async (_req, res, context) => {
-	res.json(await rows(`SELECT ${publicColumns}, published FROM civic.records WHERE kind <> 'request' ORDER BY created_at DESC LIMIT 500`, {}, context.tx));
+	res.json(await rows(`SELECT ${publicColumns}, published FROM civic.records WHERE kind <> 'request' AND archived_at IS NULL ORDER BY created_at DESC LIMIT 500`, {}, context.tx));
 });
 secured("post", "/staff/content", "publish", async (req, res, context) => {
 	const kind = text(req.body.kind, "content type", 40);
 	if (!contentKinds.includes(kind)) throw new CivicError(400, "Invalid content type");
 	if (typeof req.body.published !== "boolean") throw new CivicError(400, "Invalid publication state");
-	const result = await rows(`INSERT INTO civic.records(id, tenant_id, kind, title, description, location, longitude, latitude, published, url)
-		VALUES (:id, :tenant, :kind, :title, :description, :location, :longitude, :latitude, :published, :url) RETURNING ${publicColumns}, published`, {
+	const result = await rows(`INSERT INTO civic.records(id, tenant_id, kind, title, description, location, longitude, latitude, published, url, calendar_date)
+		VALUES (:id, :tenant, :kind, :title, :description, :location, :longitude, :latitude, :published, :url, CAST(:calendarDate AS date)) RETURNING ${publicColumns}, published`, {
 		id: randomUUID(), tenant: context.portal.id, kind, title: text(req.body.title, "title", 150),
 		description: text(req.body.description, "description", 10000), location: text(req.body.location || "", "location", 500, false),
-		...coordinates(req.body.longitude, req.body.latitude), published: req.body.published, url: safeUrl(req.body.url)
+		...coordinates(req.body.longitude, req.body.latitude), published: req.body.published, url: safeUrl(req.body.url),
+		calendarDate: calendarDate(req.body.calendar_date)
 	}, context.tx);
 	res.status(201).json(result[0]);
 });
@@ -667,14 +669,23 @@ secured("put", "/staff/content/:id", "publish", async (req, res, context) => {
 		description: text(req.body.description, "description", 10000),
 		location: text(req.body.location || "", "location", 500, false),
 		...coordinates(req.body.longitude, req.body.latitude),
-		url: safeUrl(req.body.url)
+		url: safeUrl(req.body.url),
+		calendarDate: calendarDate(req.body.calendar_date)
 	} : {};
 	const result = await rows(`UPDATE civic.records SET published = :published, updated_at = now()
-		${editing ? ", title = :title, description = :description, location = :location, longitude = :longitude, latitude = :latitude, url = :url" : ""}
-		WHERE id = :id AND kind <> 'request' RETURNING ${publicColumns}, published`,
+		${editing ? ", title = :title, description = :description, location = :location, longitude = :longitude, latitude = :latitude, url = :url, calendar_date = CAST(:calendarDate AS date)" : ""}
+		WHERE id = :id AND kind <> 'request' AND archived_at IS NULL RETURNING ${publicColumns}, published`,
 		{ id: identifier(req.params.id), published: req.body.published, ...values }, context.tx);
 	if (!result.length) throw new CivicError(404, "Content not found");
 	res.json(result[0]);
+});
+// Archiving only clears the item from staff and field workspaces; published information stays on the public portal.
+secured("post", "/staff/content/:id/archive", "publish", async (req, res, context) => {
+	const result = await rows(`UPDATE civic.records SET archived_at = now(), archived_by = :actor, updated_at = now()
+		WHERE id = :id AND kind <> 'request' AND archived_at IS NULL RETURNING id`,
+		{ id: identifier(req.params.id), actor: context.member.id }, context.tx);
+	if (!result.length) throw new CivicError(404, "Content not found");
+	res.json({ archived: true });
 });
 function geojson(records: RecordRow[], states: State[]) {
 	return {
@@ -835,6 +846,7 @@ secured("get", "/staff/map", null, async (_req, res, context) => {
 	requireOperations(context);
 	const records = await rows<RecordRow>(
 		`SELECT id, kind, title, status, location, longitude, latitude FROM civic.records WHERE longitude IS NOT NULL
+		AND (kind = 'request' OR archived_at IS NULL)
 		${context.permissions.includes("read") ? "" : "AND ((kind = 'request' AND assigned_to = :actor) OR (kind <> 'request' AND published))"}
 		ORDER BY created_at DESC, id LIMIT 5001`, { actor: context.member.id }, context.tx);
 	res.json(geojson(records, context.portal.settings.states));

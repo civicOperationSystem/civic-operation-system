@@ -25,7 +25,7 @@ process.env.NEXT_TELEMETRY_DISABLED = '1';
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testMatch: 'civic.spec.mjs',
+  testMatch: '*.spec.mjs',
   workers: 1,
   retries: 0,
   timeout: 120000,

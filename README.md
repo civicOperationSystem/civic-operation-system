@@ -214,6 +214,12 @@ npm run build
 
 The browser test starts temporary servers on ports 3330, 3310 and 3311, creates a disposable organization in `civicos_test`, exercises resident reporting, staff dispatch, mobile field completion, verification, organization settings, private-safe tracking and the map, then removes its fixture data. Run backend and browser tests sequentially because they rotate the test-only database role's password.
 
+`npm test` in `civicos-backend` includes the API end-to-end suite (`tests/*.e2e.test.ts`); run it alone with `npm run test:e2e`. The browser suite `tests/e2e/map.spec.mjs` covers map pins on public information, calendar dates and archiving, and needs internet access for map tiles.
+
+### Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pushes and pull requests to `main`: type-check, unit tests and builds for each project, the backend Vitest suites and the Playwright browser suite against a `postgres:15` service, and a build-only check of each `Dockerfile.civic`. It does not deploy. Failed browser runs upload traces as the `playwright-results` artifact.
+
 ```powershell
 docker stop civicos-tests
 docker rm civicos-tests

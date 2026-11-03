@@ -171,6 +171,14 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       setDetail(null); await load(token, page);
     }, 'Request archived. It remains visible in the public portal.');
   }
+  async function archiveContent(item: CivicRecord) {
+    if (!window.confirm(`Archive "${item.title}"? It will be removed from staff and field workspaces and can no longer be edited or withdrawn here.${item.published ? ' It stays visible on the public portal.' : ''}`)) return;
+    await action(async () => {
+      await civicApi(`/staff/content/${item.id}/archive`, { token, method: 'POST' });
+      if (editingContent?.id === item.id) setEditingContent(null);
+      setRevision(value => value + 1); await load();
+    }, item.published ? 'Information archived. It remains visible in the public portal.' : 'Information archived.');
+  }
   async function addNote() {
     if (!detail || !notes.trim()) return;
     await action(async () => {
@@ -348,6 +356,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
               longitude: data.get('longitude') ? Number(data.get('longitude')) : null,
               latitude: data.get('latitude') ? Number(data.get('latitude')) : null,
               url: data.get('url'), published: data.get('published') === 'on',
+              calendar_date: data.get('calendar_date') || null,
             } }); form.reset(); setEditingContent(null); setContentLongitude(''); setContentLatitude(''); setContentMapOpen(false); await load();
           }, 'Content saved');
         }}>
@@ -359,10 +368,12 @@ export default function Workspace({ field = false }: { field?: boolean }) {
           {contentMapOpen && <><p className={styles.hint}>Click the map to set the longitude and latitude.</p>
             <MapEmbed portal={session.portal} token={token} revision={revision} center={contentPoint || session.portal.settings.center} zoom={contentPoint ? 16 : undefined} marker={contentPoint || undefined}
               onPoint={([longitude, latitude]) => { setContentLongitude(longitude.toFixed(6)); setContentLatitude(latitude.toFixed(6)); }} /></>}
+          <label>Calendar date (optional)<input name="calendar_date" type="date" defaultValue={editingContent?.calendar_date || ''} aria-describedby="calendar-date-hint" /></label>
+          <p id="calendar-date-hint" className={styles.hint}>Published information with a date appears on that day in the public calendar.</p>
           <label>Document or information URL (HTTPS)<input name="url" type="url" defaultValue={editingContent?.url || ''} /></label><label className={styles.checkbox}><input name="published" type="checkbox" defaultChecked={editingContent?.published} /> Publish immediately</label><button className={styles.primary} disabled={busy}>Save information</button>
           {editingContent && <button type="button" className={styles.secondary} onClick={() => setEditingContent(null)}>Cancel editing</button>}
-        </form></section><section><h3>Community information</h3><div className={styles.fieldCards}>{content.map(item => <article key={item.id} className={styles.card}><span className={styles.tag}>{item.kind} · {item.published ? 'Public' : 'Draft'}</span><h3>{item.title}</h3><p>{item.description}</p>
-          <div className={styles.inline}><button className={styles.secondary} onClick={() => setEditingContent(item)}>Edit information</button><button disabled={busy} className={styles.secondary} onClick={() => void action(async () => { await civicApi(`/staff/content/${item.id}`, { token, method: 'PUT', body: { published: !item.published } }); await load(); }, 'Publication updated')}>{item.published ? 'Withdraw from portal' : 'Publish'}</button></div></article>)}</div></section></div>}
+        </form></section><section><h3>Community information</h3><div className={styles.fieldCards}>{content.map(item => <article key={item.id} className={styles.card}><span className={styles.tag}>{item.kind} · {item.published ? 'Public' : 'Draft'}</span>        <h3>{item.title}</h3><p>{item.description}</p>{item.calendar_date && <small>Calendar: {item.calendar_date}</small>}
+                  <div className={styles.inline}><button className={styles.secondary} onClick={() => setEditingContent(item)}>Edit information</button><button disabled={busy} className={styles.secondary} onClick={() => void action(async () => { await civicApi(`/staff/content/${item.id}`, { token, method: 'PUT', body: { published: !item.published } }); await load(); }, 'Publication updated')}>{item.published ? 'Withdraw from portal' : 'Publish'}</button><button disabled={busy} className={styles.secondary} aria-label={`Archive ${item.title}`} onClick={() => void archiveContent(item)}>Archive</button></div></article>)}</div></section></div>}
         {view === 'members' && has('manage') && <>
           <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Member</th><th>Role</th><th>Access</th></tr></thead><tbody>{members.map(member => <tr key={member.id}><td><label className={styles.srOnly} htmlFor={`member-name-${member.id}`}>Name for {member.email}</label><input id={`member-name-${member.id}`} defaultValue={member.display_name} disabled={busy} maxLength={100} onBlur={event => {
             const display_name = event.currentTarget.value.trim();

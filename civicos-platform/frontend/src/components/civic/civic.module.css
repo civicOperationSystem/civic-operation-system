@@ -116,6 +116,8 @@
 .calendarDay button { padding:6px; border:1px solid #0d9488; border-radius:6px; background:#0d9488; color:#fff; font-size:11px; text-align:left; overflow-wrap:anywhere; }
 .calendarDay button small { display:block; margin-top:3px; color:#d5f3ed; font-size:9px; }
 .calendarDay button strong { display:block; font-size:11px; }
+.calendarDay button.calendarInformation { border-color:#1e3a5f; background:#fff; color:#1e3a5f; }
+.calendarDay button.calendarInformation small { color:#58717b; text-transform:capitalize; }
 .calendarMuted { background:#f7f9fa; color:#a0b0b5; }
 .adminList { display:grid; gap:8px; padding:0; margin:12px 0; list-style:none; }
 .adminList li { display:flex; align-items:center; justify-content:space-between; gap:10px; }

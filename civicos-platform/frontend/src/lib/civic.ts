@@ -14,7 +14,7 @@ export type CivicRecord = {
   id: string; kind: string; title: string; description: string; location: string;
   category: string; status: string; reference: string; published: boolean;
   assigned_to: string | null; archived_at?: string | null; longitude: number | null; latitude: number | null;
-  created_at: string; updated_at: string; url?: string | null;
+  created_at: string; updated_at: string; url?: string | null; calendar_date?: string | null;
 };
 export type History = {
   id: string; actor: string | null; previous_status: string | null; new_status: string;

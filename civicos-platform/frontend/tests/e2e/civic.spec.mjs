@@ -2,9 +2,8 @@ import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
+import { magicLinkToken, signInWithMagicLink } from './helpers.mjs';
 
-const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
-const userIds = new Map();
 test('field photos are compressed in the browser within the upload limits', async ({ page }) => {
   const source = readFileSync(new URL('../../src/lib/civic.ts', import.meta.url), 'utf8');
   const script = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
@@ -61,23 +60,6 @@ test('main portal offers public organizations and opens the selected workspace',
   await expect(page.getByRole('heading', { name: organization.name, exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Staff sign in' })).toHaveAttribute('href', `/staff?org=${organization.slug}`);
 });
-
-function magicLinkToken(email) {
-  const now = Math.floor(Date.now() / 1000);
-  return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({
-    sub: userIds.get(email) || userIds.set(email, randomUUID()).get(email),
-    email, aud: 'authenticated', role: 'authenticated', iat: now, exp: now + 3600,
-  })}.e2e-signature`;
-}
-async function signInWithMagicLink(page, path, slug, email) {
-  await page.goto(`http://127.0.0.1:3310/${path}?org=${slug}`);
-  await expect(page.getByLabel('Organization')).toHaveAttribute('readonly', '');
-  await page.getByLabel('Email', { exact: true }).fill(email);
-  await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
-  await expect(page.getByRole('status')).toContainText('one-time sign-in link has been sent');
-  const token = magicLinkToken(email);
-  await page.goto(`http://127.0.0.1:3310/${path}?org=${slug}&e2e_auth_callback=${randomUUID()}#access_token=${encodeURIComponent(token)}&refresh_token=e2e-refresh&token_type=bearer&type=magiclink&expires_in=3600`);
-}
 
 test('resident → staff → mobile field → verification → private-safe tracking', async ({ page, browser }) => {
   const slug = process.env.E2E_SLUG;

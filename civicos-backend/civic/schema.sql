@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS civic.records (
 );
 ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS archived_at timestamptz;
 ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS archived_by uuid;
+ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS calendar_date date;
 ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS field_photo text;
 ALTER TABLE civic.records ADD COLUMN IF NOT EXISTS photos text[] NOT NULL DEFAULT '{}';
 UPDATE civic.records SET photos = ARRAY[photo]

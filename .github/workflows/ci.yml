@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24
+  NEXT_TELEMETRY_DISABLED: 1
+  CIVIC_TEST_PORT: 15433
+  CIVIC_TEST_PASSWORD: civicos-test-local-only
+
+jobs:
+  backend:
+    name: Backend (type-check, build, Vitest)
+    runs-on: ubuntu-latest
+    # Unit and Vitest e2e suites share the test database and rotate the civic_app password, so they run in one job, sequentially.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: civicos_test
+          POSTGRES_PASSWORD: civicos-test-local-only
+        ports:
+          - 15433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d civicos_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: civicos-backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: civicos-backend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit -p .
+      - run: npm run build
+      - run: npm test
+
+  frontend:
+    name: Platform frontend (type-check, unit tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: civicos-platform/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: civicos-platform/frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit -p .
+      - run: npm test
+      - run: npm run build
+
+  map:
+    name: Map (type-check, unit tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: civicos-map
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: civicos-map/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit -p .
+      - run: npm test
+      - run: npm run build
+
+  e2e:
+    name: Browser end-to-end (Playwright)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, map]
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: civicos_test
+          POSTGRES_PASSWORD: civicos-test-local-only
+        ports:
+          - 15433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d civicos_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            civicos-backend/package-lock.json
+            civicos-platform/frontend/package-lock.json
+            civicos-map/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci --prefix civicos-backend
+          npm ci --prefix civicos-platform/frontend
+          npm ci --prefix civicos-map
+      # The Playwright backend fixture runs the compiled dist/scripts/civic-init.js.
+      - name: Build backend
+        run: npm run build --prefix civicos-backend
+      - name: Install Chromium
+        working-directory: civicos-platform/frontend
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright
+        working-directory: civicos-platform/frontend
+        run: npm run test:e2e
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: civicos-platform/frontend/test-results/
+          retention-days: 7
+
+  docker:
+    name: Docker image ${{ matrix.name }} (build only, no push)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            context: civicos-backend
+            build-args: ""
+          - name: frontend
+            context: civicos-platform/frontend
+            # Placeholder public values; real values are supplied at deploy time.
+            build-args: |
+              NEXT_PUBLIC_SUPABASE_URL=https://ci-placeholder.supabase.co
+              NEXT_PUBLIC_SUPABASE_ANON_KEY=ci-placeholder-anon-key
+          - name: map
+            context: civicos-map
+            build-args: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile.civic
+          build-args: ${{ matrix.build-args }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

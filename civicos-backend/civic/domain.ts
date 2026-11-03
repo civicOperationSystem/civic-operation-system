@@ -70,6 +70,15 @@ export function safeUrl(value: unknown): string | null {
 	} catch { /* Invalid URLs receive the same validation error as unsafe protocols. */ }
 	throw new CivicError(400, "URLs must use HTTPS");
 }
+export function calendarDate(value: unknown): string | null {
+	if (value == null || value === "") return null;
+	if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+		const [year = 0, month = 0, day = 0] = value.split("-").map(Number);
+		const date = new Date(Date.UTC(year, month - 1, day));
+		if (year >= 1900 && year <= 2200 && date.getUTCMonth() === month - 1 && date.getUTCDate() === day) return value;
+	}
+	throw new CivicError(400, "Calendar date must be a valid YYYY-MM-DD date");
+}
 export function validateSettings(value: unknown): Settings {
 	if (!value || typeof value !== "object") throw new CivicError(400, "Invalid settings");
 	const settings = value as Settings;

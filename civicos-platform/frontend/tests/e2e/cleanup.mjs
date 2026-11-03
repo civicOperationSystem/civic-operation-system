@@ -13,7 +13,7 @@ export default async function cleanup() {
   });
   try {
     await db.transaction(async transaction => {
-      for (const testSlug of [slug, `managed-${slug}`]) {
+      for (const testSlug of [slug, `managed-${slug}`, `maps-${slug}`]) {
         const [portal] = await db.query('SELECT id FROM civic.portals WHERE slug = :slug', {
           replacements: { slug: testSlug }, type: QueryTypes.SELECT, transaction,
         });
