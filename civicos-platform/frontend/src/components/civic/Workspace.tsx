@@ -271,7 +271,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
         {detail && ['requests', 'calendar', 'map'].includes(view) && <article className={`${styles.card} ${styles.detail}`}>
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{stateLabel(detail.status)}</span><h3>{detail.title}</h3></div><button onClick={() => setDetail(null)} className={styles.secondary}>Close</button></div>
           {field && <section className={styles.fieldEvidence}><h3>Add completion evidence</h3><p className={styles.hint}>Pin where the work was completed and upload up to three field photos (PNG, JPEG or WebP, up to 5 MB each). Photos over 512 KB are compressed to JPEG before upload. Field photos are public when the request is verified.</p>
-            <label>Completion photo ({fieldPhotoCount}/3)<input className={styles.photoPicker} type="file" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy || fieldPhotoCount >= 3} onChange={event => {
+            <label>Upload completion photo ({fieldPhotoCount}/3)<input className={styles.photoPicker} type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || fieldPhotoCount >= 3} onChange={event => {
               const file = event.currentTarget.files?.[0] || null;
               event.currentTarget.value = '';
               void uploadFieldPhoto(file);
