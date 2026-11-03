@@ -221,5 +221,6 @@ export default function CivicMap() {
       </aside>}
       <section className={styles.mapArea} aria-busy={!map}><div ref={container} className={styles.map} />{context?.focused ? mapError && <p className={`${styles.error} ${styles.mapError}`} role="alert">{mapError}</p> : <div className={styles.legend}><span>● Requests</span><span>● Facilities</span><span>● Infrastructure</span></div>}</section>
     </div>
+    {!context && <footer className={styles.footer}>Powered by Codyza</footer>}
   </main>;
 }

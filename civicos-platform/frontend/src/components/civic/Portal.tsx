@@ -230,6 +230,6 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       </div>}
       {error && view !== 'report' && view !== 'map' && <p role="alert" className={styles.error}>{error}</p>}
     </>}
-    <footer className={styles.footer}><strong>CivicOS</strong><span>Open infrastructure for everyday community life.</span><span>Public portal · No account required</span></footer>
+    <footer className={styles.footer}><strong>CivicOS</strong><span>Open infrastructure for everyday community life.</span><span>Public portal · No account required</span><span>Powered by Codyza</span></footer>
   </main>;
 }

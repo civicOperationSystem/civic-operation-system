@@ -386,5 +386,6 @@ export default function Workspace({ field = false }: { field?: boolean }) {
         </>}
       </section>
     </div>}
+    <footer className={styles.footer}><strong>CivicOS</strong><span>{field ? 'Field workspace' : 'Staff operations'}</span><span>Powered by Codyza</span></footer>
   </main>;
 }

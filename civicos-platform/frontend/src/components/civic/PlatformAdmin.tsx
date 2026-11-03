@@ -283,5 +283,6 @@ export default function PlatformAdmin() {
         </form>
       </section>
     </div>}
+    <footer className={styles.footer}><strong>CivicOS</strong><span>Platform administration</span><span>Powered by Codyza</span></footer>
   </main>;
 }
