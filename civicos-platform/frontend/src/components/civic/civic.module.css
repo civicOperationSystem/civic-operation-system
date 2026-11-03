@@ -146,6 +146,8 @@
 .hubGroups .card { display:flex; width:100%; flex-direction:column; align-items:flex-start; gap:7px; text-align:left; background:#ecfdf5; border-color:#a7f3d0; }
 .hubGroups .card:hover { background:#d1fae5; border-color:#0d9488; }
 .openDetails { color:#176f64; font-size:12px; font-weight:700; }
+.hubItem { display:flex; flex-direction:column; gap:8px; }
+.hubItem .card { flex:1; }
 .chatLayout { min-height:560px; height:min(72vh,820px); display:grid; grid-template-columns:270px minmax(0,1fr); border:1px solid #dfe7ea; border-radius:12px; overflow:hidden; background:#fff; }
 .chatSidebar { display:flex; flex-direction:column; min-height:0; gap:10px; padding:18px; border-right:1px solid #e4ebee; overflow-y:auto; }
 .chatSidebar h3 { margin:10px 0 0; font-size:12px; }

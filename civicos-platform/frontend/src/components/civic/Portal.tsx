@@ -30,6 +30,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [point, setPoint] = useState<[number, number] | null>(null);
+  const [mapFocus, setMapFocus] = useState<{ title: string; point: [number, number] } | null>(null);
   const [submitted, setSubmitted] = useState('');
   const [anonymous, setAnonymous] = useState(true);
   async function load(nextSlug?: string) {
@@ -42,7 +43,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         civicApi<PublicCalendarRequest[]>(`/public/${org.slug}/requests/calendar`),
       ]);
       setPortal(org); setSlug(org.slug); setContent(records); setCalendarRequests(requests); setAnonymous(org.settings.anonymous);
-      setSubmitted(''); setPublicRequestDetail(null); setPublicContentDetail(null); setPoint(null);
+      setSubmitted(''); setPublicRequestDetail(null); setPublicContentDetail(null); setPoint(null); setMapFocus(null);
       document.documentElement.lang = org.settings.language;
       document.title = `${org.name} | CivicOS`;
     } catch (failure) { setPortal(null); setError(failure instanceof Error ? failure.message : 'Could not load portal'); }
@@ -95,6 +96,13 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Could not load public request');
     } finally { setBusy(false); }
+  }
+  const hasPoint = (item: CivicRecord) => item.longitude !== null && item.latitude !== null;
+  function openOnMap(item: CivicRecord) {
+    if (!hasPoint(item)) return;
+    setMapFocus({ title: item.title, point: [item.longitude!, item.latitude!] });
+    setPublicContentDetail(null); setError(''); setView('map');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   const settings = portal?.settings;
   const hubGroups = content.filter(item => kind === 'all' || item.kind === kind).reduce<{ key: string; label: string; items: CivicRecord[] }[]>((groups, item) => {
@@ -152,26 +160,30 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         <aside className={styles.heroAside}><span className={styles.pulse} /> Open, local, accountable<p>One platform for residents,<br />staff, and field teams.</p><strong>{settings?.departments.length} departments · {settings?.services.length} services</strong></aside>
       </section>
       <nav className={styles.tabs} aria-label="Portal sections">
-        {['overview', 'map', 'calendar', 'report'].map(tab => <button key={tab} aria-current={view === tab ? 'page' : undefined} onClick={() => { setView(tab); setError(''); }}>{({ overview: 'Community hub', map: 'Explore the map', calendar: 'Public requests', report: 'Report a problem' })[tab]}</button>)}
+        {['overview', 'map', 'calendar', 'report'].map(tab => <button key={tab} aria-current={view === tab ? 'page' : undefined} onClick={() => { setView(tab); setError(''); setMapFocus(null); }}>{({ overview: 'Community hub', map: 'Explore the map', calendar: 'Public requests', report: 'Report a problem' })[tab]}</button>)}
       </nav>
       <div className={styles.body}>
         {content.filter(item => item.kind === 'emergency').map(item => <aside key={item.id} className={styles.emergency}><strong>Emergency notice · {item.title}</strong><p>{item.description}</p></aside>)}
         {view === 'overview' && <>
           <div className={styles.sectionTitle}><div><p className={styles.eyebrow}>WHAT'S HAPPENING</p><h2>Your community hub</h2></div>
             <label>Show<select value={kind} onChange={event => setKind(event.target.value)}>{kinds.map(type => <option key={type} value={type}>{type === 'all' ? 'All information' : type}</option>)}</select></label></div>
-          <div className={styles.hubGroups}>{hubGroups.map(group => <section key={group.key}><h3>{group.label}</h3><div className={styles.cards}>{group.items.map(item => <button type="button" className={styles.card} key={item.id} onClick={() => setPublicContentDetail(item)}>
-            <span className={styles.tag}>{item.kind}</span><h3>{item.title}</h3><p>{item.description}</p>
-            <small>Published {displayDate(item.created_at, portal.settings)}</small>
-            {item.location && <small>{item.location}</small>}
-            <span className={styles.openDetails}>Open details</span>
-          </button>)}</div></section>)}</div>
+          <div className={styles.hubGroups}>{hubGroups.map(group => <section key={group.key}><h3>{group.label}</h3><div className={styles.cards}>{group.items.map(item => <div className={styles.hubItem} key={item.id}>
+            <button type="button" className={styles.card} onClick={() => setPublicContentDetail(item)}>
+              <span className={styles.tag}>{item.kind}</span><h3>{item.title}</h3><p>{item.description}</p>
+              <small>Published {displayDate(item.created_at, portal.settings)}</small>
+              {item.location && <small>{item.location}</small>}
+              <span className={styles.openDetails}>Open details</span>
+            </button>
+            {hasPoint(item) && <button type="button" className={styles.secondary} aria-label={`View ${item.title} on the map`} onClick={() => openOnMap(item)}>View on map</button>}
+          </div>)}</div></section>)}</div>
           {!content.length && <div className={styles.empty}><h3>Your community hub is ready.</h3><p>Published services, events, facilities and announcements will appear here.</p></div>}
           {!!calendarRequests.length && <section className={styles.publicTickets}><h3>Community work updates</h3><div className={styles.cards}>{calendarRequests.map(record => <button key={record.id} className={styles.card} onClick={() => void selectPublicRequest(record.id)}><span className={styles.tag}>{record.status}</span><strong>{record.title}</strong><small>{record.category || 'Community request'}</small>{record.completed_at && <small>Completed {displayDate(record.completed_at, portal.settings)}</small>}<span>Open ticket details</span></button>)}</div></section>}
           <section className={styles.contact}><h3>Here to help</h3><p>{settings?.contact || 'Contact your community staff through the service request form.'}</p>
             <div className={styles.inline}>{settings?.services.map(service => <span className={styles.tag} key={service}>{service}</span>)}</div></section>
         </>}
         {view === 'map' && <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>EXPLORE YOUR COMMUNITY</p><h2>Places, infrastructure & public work</h2></div></div>
-          <p className={styles.hint}>This map is read-only by default. Use the zoom controls to inspect an area, or enable interaction to browse public locations and open a request.</p><MapEmbed portal={portal} locked onSelect={id => void selectPublicRequest(id)} />
+          {mapFocus && <div className={styles.inline} role="status"><p className={styles.hint}>Showing <strong>{mapFocus.title}</strong> on the map.</p><button type="button" className={styles.secondary} onClick={() => setMapFocus(null)}>Show the whole community</button></div>}
+          <p className={styles.hint}>This map is read-only by default. Use the zoom controls to inspect an area, or enable interaction to browse public locations and open a request.</p><MapEmbed portal={portal} locked center={mapFocus?.point} marker={mapFocus?.point} zoom={mapFocus ? 16 : undefined} onSelect={id => void selectPublicRequest(id)} />
           {error && <p role="alert" className={styles.error}>{error}</p>}
           <section className={styles.publicTickets}><h3>Public request tickets</h3>{!calendarRequests.length ? <p className={styles.hint}>There are no public request tickets yet.</p> :
             <div className={styles.cards}>{calendarRequests.map(record => <button key={record.id} className={styles.card} onClick={() => void selectPublicRequest(record.id)}><span className={styles.tag}>{record.status}</span><strong>{record.title}</strong><small>{record.category || 'Community request'}</small><span>View public ticket details</span></button>)}</div>}
@@ -230,7 +242,8 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="public-content-title">
           <div className={styles.sectionTitle}><div><span className={styles.tag}>{publicContentDetail.kind}</span><h2 id="public-content-title">{publicContentDetail.title}</h2></div><button className={styles.secondary} onClick={() => setPublicContentDetail(null)}>Close</button></div>
           <div className={styles.ticketModalLayout}><div><p>{publicContentDetail.description}</p><p>Published {displayDate(publicContentDetail.created_at, portal.settings)}</p>{publicContentDetail.location && <p>Location: {publicContentDetail.location}</p>}
-            {publicContentDetail.url && <a className={styles.primary} href={publicContentDetail.url} target="_blank" rel="noopener noreferrer">Open document or information ↗</a>}</div>
+            <div className={styles.inline}>{publicContentDetail.url && <a className={styles.primary} href={publicContentDetail.url} target="_blank" rel="noopener noreferrer">Open document or information ↗</a>}
+              {hasPoint(publicContentDetail) && <button type="button" className={styles.secondary} onClick={() => openOnMap(publicContentDetail)}>Open in community map</button>}</div></div>
             <aside><h3>Location</h3>{publicContentDetail.longitude !== null && publicContentDetail.latitude !== null ?
               <MapEmbed portal={portal} center={[publicContentDetail.longitude, publicContentDetail.latitude]} zoom={16} /> :
               <p className={styles.hint}>A map location was not provided for this information.</p>}</aside></div>
