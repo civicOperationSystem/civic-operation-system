@@ -253,6 +253,7 @@ npm ci
 npm test
 npx playwright install chromium
 npm run test:e2e
+npm run test:e2e:integration
 npm run build
 Set-Location ..\..\civicos-map
 npm ci
@@ -260,7 +261,9 @@ npm test
 npm run build
 ```
 
-The browser test starts temporary servers on ports 3330, 3310 and 3311, creates a disposable organization in `civicos_test`, exercises resident reporting, staff dispatch, mobile field completion, verification, organization settings, private-safe tracking and the map, then removes its fixture data. Run backend and browser tests sequentially because they rotate the test-only database role's password.
+`npm run test:e2e` in `civicos-platform/frontend` runs frontend-only Playwright scripts with mocked CivicOS and Supabase API responses. It starts only the frontend and map apps on ports 3310 and 3311; no backend, authentication server, or database is started or required. These tests cover directory navigation, report submission, staff sign-in feedback and platform organization creation. Service workers are blocked so requests cannot bypass the mocks; offline/service-worker behavior is covered by the integration suite instead.
+
+`npm run test:e2e:integration` runs the original database-backed browser suite. It starts temporary servers on ports 3330, 3331, 3310 and 3311, creates a disposable organization in `civicos_test`, exercises resident reporting, staff dispatch, mobile field completion, verification, organization settings, private-safe tracking and the map, then removes its fixture data. Run backend and integration browser tests sequentially because they rotate the test-only database role's password.
 
 `npm test` in `civicos-backend` includes the API end-to-end suite (`tests/*.e2e.test.ts`); run it alone with `npm run test:e2e`. The browser suite `tests/e2e/map.spec.mjs` covers map pins on public information, calendar dates and archiving, and needs internet access for map tiles.
 

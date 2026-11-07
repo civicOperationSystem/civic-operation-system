@@ -124,9 +124,12 @@ jobs:
       - name: Install Chromium
         working-directory: civicos-platform/frontend
         run: npx playwright install --with-deps chromium
-      - name: Run Playwright
+      - name: Run frontend-only Playwright
         working-directory: civicos-platform/frontend
         run: npm run test:e2e
+      - name: Run integration Playwright
+        working-directory: civicos-platform/frontend
+        run: npm run test:e2e:integration
       - name: Upload Playwright traces
         if: failure()
         uses: actions/upload-artifact@v4
