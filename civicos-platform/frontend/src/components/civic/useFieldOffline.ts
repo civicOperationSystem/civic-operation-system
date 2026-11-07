@@ -186,9 +186,20 @@ export default function useFieldOffline(enabled: boolean) {
     const timer = window.setTimeout(() => {
       if (active) setError('Offline page caching is not ready. Stay online and refresh before leaving for the field.');
     }, 20000);
-    void navigator.serviceWorker.register('/field-sw.js', { scope: '/field' })
-      .then(() => navigator.serviceWorker.ready)
-      .then(() => { if (active) { clearTimeout(timer); setShellReady(true); } })
+    void Promise.all([
+      navigator.serviceWorker.register('/field-sw.js', { scope: '/field' }),
+      navigator.serviceWorker.register('/field-sw.js', { scope: '/' }),
+    ]).then(async ([fieldRegistration, rootRegistration]) => {
+      await navigator.serviceWorker.ready;
+      return { fieldRegistration, rootRegistration };
+    }).then(({ fieldRegistration, rootRegistration }) => {
+        if (active) {
+          clearTimeout(timer);
+          setShellReady(true);
+          fieldRegistration.active?.postMessage({ type: 'CACHE_APP_SHELL', url: window.location.href });
+          rootRegistration.active?.postMessage({ type: 'CACHE_APP_SHELL', url: window.location.href });
+        }
+      })
       .catch(failure => {
         clearTimeout(timer);
         if (active) setError(`Offline page caching failed: ${failure instanceof Error ? failure.message : String(failure)}`);

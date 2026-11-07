@@ -4,12 +4,15 @@ import Link from 'next/link';
 import type { Session as SupabaseSession } from '@supabase/supabase-js';
 import { civicApi, CivicRecord, Session, Member, RequestDetail, Portal, displayDate, fieldCanEnter, readFieldPhoto } from '@/lib/civic';
 import { projectFieldDetail, type FieldUpdate } from '@/lib/field-offline';
+import { clearStaffCache, readStaffCache, saveStaffSnapshot, staffOfflineScope } from '@/lib/portal-offline';
 import { getCivicSupabase, isCivicSupabaseConfigured } from '@/lib/supabase';
 import MapEmbed from './MapEmbed';
 import OrganizationSettings from './OrganizationSettings';
 import ChatPanel from './ChatPanel';
 import useFieldOffline from './useFieldOffline';
 import styles from './civic.module.css';
+
+const staffIdentityKey = (slug: string) => `civicos-staff-identity:${slug}`;
 
 export default function Workspace({ field = false }: { field?: boolean }) {
   const offline = useFieldOffline(field);
@@ -61,9 +64,14 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   })();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [staffOffline, setStaffOffline] = useState(false);
+  const [networkOnline, setNetworkOnline] = useState(true);
+  const [staffSnapshotSavedAt, setStaffSnapshotSavedAt] = useState('');
+  const [offlineStorageWarning, setOfflineStorageWarning] = useState('');
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const exchangedToken = useRef('');
+  const staffIdentity = useRef('');
   const exchangeSession = useRef<((authSession: SupabaseSession) => Promise<void>) | null>(null);
   useEffect(() => {
     if (!field || !offline.cache) return;
@@ -80,6 +88,42 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     setSlug(organization);
     setLinkedOrganization(!!organization);
   }, []);
+  useEffect(() => {
+    if (field) return;
+    setNetworkOnline(navigator.onLine);
+    if (!('serviceWorker' in navigator)) {
+      setOfflineStorageWarning('Offline page caching requires a current browser over HTTPS.');
+      return;
+    }
+    let active = true;
+    void navigator.serviceWorker.register('/field-sw.js', { scope: '/' })
+      .then(registration => navigator.serviceWorker.ready.then(() => registration))
+      .then(registration => {
+        if (active && registration.active) {
+          registration.active.postMessage({ type: 'CACHE_APP_SHELL', url: window.location.href });
+        }
+      })
+      .catch(failure => {
+        if (active) setOfflineStorageWarning(`Offline page caching failed: ${failure instanceof Error ? failure.message : String(failure)}`);
+      });
+    const disconnected = () => { setNetworkOnline(false); setStaffOffline(true); };
+    const reconnected = () => {
+      setNetworkOnline(true);
+      if (!isCivicSupabaseConfigured()) return;
+      exchangedToken.current = '';
+      void getCivicSupabase().auth.getSession().then(({ data, error: authError }) => {
+        if (authError) throw authError;
+        if (data.session) return exchangeSession.current?.(data.session);
+      }).catch(failure => setError(failure instanceof Error ? failure.message : 'Could not refresh staff access'));
+    };
+    window.addEventListener('offline', disconnected);
+    window.addEventListener('online', reconnected);
+    return () => {
+      active = false;
+      window.removeEventListener('offline', disconnected);
+      window.removeEventListener('online', reconnected);
+    };
+  }, [field]);
   useEffect(() => {
     setOrganizationName('');
     if (!linkedOrganization || !slug) return;
@@ -114,8 +158,21 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       const config = await civicApi<{ roles: Record<string, string[]> }>('/staff/roles', { token: access });
       setRoles(config.roles);
     }
+    if (!field && staffIdentity.current) {
+      try {
+        await saveStaffSnapshot(staffOfflineScope(staffIdentity.current, slug), {
+          session: current, records: requests.map(offlineStaffRecord), content: pages, page: selectedPage,
+        });
+        setStaffSnapshotSavedAt(new Date().toISOString());
+        setOfflineStorageWarning('');
+        localStorage.setItem(staffIdentityKey(slug), staffIdentity.current);
+      } catch (failure) {
+        setOfflineStorageWarning(failure instanceof Error ? failure.message : 'Staff data could not be saved for offline access.');
+      }
+    }
+    setStaffOffline(false);
     setRevision(value => value + 1);
-  }, [page, token, field, offline.refresh]);
+  }, [page, token, field, offline.refresh, slug]);
   useEffect(() => {
     if (!slug || !isCivicSupabaseConfigured()) return;
     let active = true;
@@ -130,6 +187,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       const exchangeKey = `${slug}:${authSession.access_token}`;
       if (!active || exchangedToken.current === exchangeKey) return;
       exchangedToken.current = exchangeKey;
+      staffIdentity.current = authSession.user.id;
       setBusy(true); setError('');
       try {
         if (field && !navigator.onLine) {
@@ -149,6 +207,19 @@ export default function Workspace({ field = false }: { field?: boolean }) {
             try { await offline.open(authSession.user.id, slug); return; }
             catch (cacheFailure) { setError(cacheFailure instanceof Error ? cacheFailure.message : 'Could not restore offline assignments'); }
           }
+          if (!field && failure instanceof TypeError) {
+            try {
+              const cached = await readStaffCache(staffOfflineScope(authSession.user.id, slug));
+              if (cached) {
+                setSession(cached.session); setRecords(cached.records); setContent(cached.content);
+                setMembers([]); setRoles({}); setToken(''); setPage(cached.page);
+                setStaffSnapshotSavedAt(cached.savedAt); setStaffOffline(true); setError('');
+                return;
+              }
+            } catch (cacheFailure) {
+              setError(cacheFailure instanceof Error ? cacheFailure.message : 'Could not restore cached staff access');
+            }
+          }
           setError(failure instanceof Error ? failure.message : 'Could not verify your organization access');
           setSession(null); setToken('');
         }
@@ -158,6 +229,25 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, authSession) => {
       if (event === 'SIGNED_OUT') {
         if (field) offline.pause();
+        else if (!navigator.onLine && localStorage.getItem(staffIdentityKey(slug))) {
+          const identity = localStorage.getItem(staffIdentityKey(slug))!;
+          staffIdentity.current = identity;
+          void readStaffCache(staffOfflineScope(identity, slug)).then(cached => {
+            if (!cached) throw new Error('No saved staff workspace is available offline.');
+            setSession(cached.session); setRecords(cached.records); setContent(cached.content);
+            setMembers([]); setRoles({}); setToken(''); setPage(cached.page);
+            setStaffSnapshotSavedAt(cached.savedAt); setStaffOffline(true); setError('');
+          }).catch(failure => setError(failure instanceof Error ? failure.message : 'Could not restore cached staff access'));
+          exchangedToken.current = '';
+          return;
+        } else {
+          const identity = staffIdentity.current;
+          if (identity) void clearStaffCache(staffOfflineScope(identity, slug)).catch(failure =>
+            setError(failure instanceof Error ? failure.message : 'Could not clear the cached staff workspace'));
+          localStorage.removeItem(staffIdentityKey(slug));
+          staffIdentity.current = '';
+          setStaffOffline(false); setStaffSnapshotSavedAt('');
+        }
         exchangedToken.current = '';
         setToken(''); setSession(null); setRecords([]); setContent([]); setMembers([]); setDetail(null);
         setRoles({}); setEditingContent(null); setError('');
@@ -311,8 +401,13 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     if (field && !window.confirm('Signing out deletes cached assignments and any pending updates across all your workspaces on this device. Synchronize before signing out. Continue?')) return;
     try {
       if (field) { await offline.forget(); setSession(null); setDetail(null); setRecords([]); }
+      else {
+        localStorage.removeItem(staffIdentityKey(slug));
+        if (staffIdentity.current) await clearStaffCache(staffOfflineScope(staffIdentity.current, slug));
+        staffIdentity.current = '';
+      }
       if (isCivicSupabaseConfigured()) {
-        const { error: authError } = await getCivicSupabase().auth.signOut(field ? { scope: 'local' } : undefined);
+        const { error: authError } = await getCivicSupabase().auth.signOut(field || !navigator.onLine ? { scope: 'local' } : undefined);
         if (authError) throw authError;
       }
     } catch (failure) {
@@ -321,15 +416,41 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     }
     setToken(''); setSession(null); setRecords([]); setContent([]); setMembers([]); setDetail(null);
     setError(''); setNotice(''); setRoles({}); setEditingContent(null); exchangedToken.current = '';
+    setStaffOffline(false); setStaffSnapshotSavedAt('');
   }
+  if (!field && staffOffline && session) return <main className={styles.shell} style={{ '--civic-accent': session.portal.settings.color || '#0d9488' } as React.CSSProperties}>
+    <header className={styles.header}><Link className={styles.brand} href="/">C<span>O</span> <strong>CivicOS</strong></Link>
+      <div className={styles.headerLinks}><Link href={`/portal/${slug}`}>Public portal ↗</Link><button onClick={() => void logout()}>Sign out</button></div></header>
+    <section className={styles.workspace}>
+      <p className={styles.eyebrow}>STAFF OPERATIONS · OFFLINE</p><h1>{session.portal.name}</h1>
+      <p role="status">Offline — read-only snapshot for {session.user.email}{staffSnapshotSavedAt ? ` · last refreshed ${displayDate(staffSnapshotSavedAt, session.portal.settings)}` : ''}.</p>
+      <p className={styles.hint}>This device can show only data saved during a previous online sign-in. Access may have changed since the snapshot was saved. Reconnect to verify permissions and make updates. Sign-in links require internet.</p>
+      {offlineStorageWarning && <p role="alert" className={styles.error}>{offlineStorageWarning}</p>}
+      {!!records.length && <section><h2>Saved service requests</h2><div className={styles.fieldCards}>{records.map(record => <article key={record.id} className={styles.card}>
+        <span className={styles.tag}>{stateLabel(record.status)}</span><h3>{record.title}</h3><p>{record.description}</p>
+        <small>{record.category} · {record.location} · Updated {displayDate(record.updated_at, session.portal.settings)}</small>
+      </article>)}</div></section>}
+      {!!content.length && <section><h2>Saved organization information</h2><div className={styles.fieldCards}>{content.map(item => <article key={item.id} className={styles.card}>
+        <span className={styles.tag}>{item.kind}</span><h3>{item.title}</h3><p>{item.description}</p>
+      </article>)}</div></section>}
+      {!records.length && !content.length && <p className={styles.hint}>This account has no saved request or public information records.</p>}
+    </section>
+  </main>;
   return <main className={styles.shell} style={{ '--civic-accent': session?.portal.settings.color || '#0d9488' } as React.CSSProperties}>
     <header className={styles.header}><Link className={styles.brand} href="/">C<span>O</span> <strong>CivicOS</strong></Link>
       <div className={styles.headerLinks}><Link href={`/portal/${slug}`}>Public portal ↗</Link>{session && <button disabled={busy || (field && offline.syncing)} onClick={() => void logout()}>Sign out</button>}</div></header>
+    {!field && session && <section className={styles.card}>
+      <p role="status">{staffSnapshotSavedAt ? `Online · read-only offline snapshot ready (refreshed ${displayDate(staffSnapshotSavedAt, session.portal.settings)}).` : 'Preparing a read-only offline snapshot.'}</p>
+      <p className={styles.hint}>Offline access contains the most recently loaded request and organization information only. Reconnect to verify access or make changes. Use a trusted device; cached staff data is stored in this browser.</p>
+      {offlineStorageWarning && <p role="alert" className={styles.error}>{offlineStorageWarning}</p>}
+    </section>}
     {!session ? <section className={styles.login}><p className={styles.eyebrow}>{field ? 'FIELD WORKSPACE' : 'STAFF OPERATIONS'}</p><h1>{field ? 'Good work starts here.' : 'Your community at work.'}</h1><p className={styles.hint}>Sign in to your organization's secure workspace. Access is controlled by your role.</p>
-      <form onSubmit={login} className={styles.form}><label>Organization{linkedOrganization ?
-        <input readOnly value={organizationName || slug} /> :
-        <input required value={slug} onChange={event => setSlug(event.target.value)} pattern="[a-z0-9\-]{3,60}" />}</label><label>Email<input name="email" required type="email" autoComplete="email" /></label>
-        <button disabled={busy} className={styles.primary}>{busy ? 'Sending link…' : 'Email me a sign-in link'}</button>
+    {!field && !networkOnline && <p role="status" className={styles.hint}>A sign-in link requires internet. If you have signed in here before, your cached staff workspace will open automatically.</p>}
+    {offlineStorageWarning && <p role="alert" className={styles.error}>{offlineStorageWarning}</p>}
+    <form onSubmit={login} className={styles.form}><label>Organization{linkedOrganization ?
+      <input readOnly value={organizationName || slug} /> :
+      <input required value={slug} onChange={event => setSlug(event.target.value)} pattern="[a-z0-9\-]{3,60}" />}</label><label>Email<input name="email" required type="email" autoComplete="email" /></label>
+      <button disabled={busy || (!field && !networkOnline)} className={styles.primary}>{busy ? 'Sending link…' : 'Email me a sign-in link'}</button>
         {error && <p role="alert" className={styles.error}>{error}</p>}</form>
       <p className={styles.hint}>Sign-in links are one-time use. Sign out when you finish, especially on shared devices.</p>
       {notice && <p role="status" className={styles.success}>{notice}</p>}
@@ -535,4 +656,13 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     </div>}
     <footer className={styles.footer}><strong>CivicOS</strong><span>{field ? 'Field workspace' : 'Staff operations'}</span><span>Powered by Codyza</span></footer>
   </main>;
+}
+
+function offlineStaffRecord(record: CivicRecord): CivicRecord {
+  return {
+    id: record.id, kind: record.kind, title: record.title, description: record.description,
+    location: record.location, category: record.category, status: record.status, reference: record.reference,
+    published: record.published, assigned_to: record.assigned_to, archived_at: record.archived_at,
+    longitude: record.longitude, latitude: record.latitude, created_at: record.created_at, updated_at: record.updated_at,
+  };
 }

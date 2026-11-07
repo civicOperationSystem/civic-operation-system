@@ -290,6 +290,7 @@ civicRouter.post("/public/:slug/requests", rateLimit, endpoint(async (req, res) 
 	const portal = await portalBySlug(req.params.slug);
 	const category = text(req.body.category, "category", 100);
 	if (!portal.settings.categories.includes(category)) throw new CivicError(400, "Unknown category");
+	const requestId = req.body.client_operation_id === undefined ? randomUUID() : identifier(req.body.client_operation_id);
 	const anonymous = req.body.anonymous;
 	if (typeof anonymous !== "boolean" || (anonymous && !portal.settings.anonymous)) {
 		throw new CivicError(400, "Anonymous reporting is not available");
@@ -301,23 +302,45 @@ civicRouter.post("/public/:slug/requests", rateLimit, endpoint(async (req, res) 
 	};
 	if (contact && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) throw new CivicError(400, "Invalid contact email");
 	const values = {
-		id: randomUUID(), tenant: portal.id, reference: trackingReference(), category,
+		id: requestId, tenant: portal.id, reference: trackingReference(), category,
 		description: text(req.body.description, "description", 5000),
 		location: text(req.body.location, "location", 500),
 		...coordinates(req.body.longitude, req.body.latitude),
 		contact: JSON.stringify(contact), photos: photos(req.body.photos === undefined ? req.body.photo : req.body.photos)
 	};
+	let result: { reference: string; status: string };
 	await tenantTransaction(portal.id, async tx => {
-		await rows(`INSERT INTO civic.records (id, tenant_id, kind, title, description, category, location,
+		const [inserted] = await rows<{ id: string }>(`INSERT INTO civic.records (id, tenant_id, kind, title, description, category, location,
 			longitude, latitude, status, reference, contact, photo, photos)
 			VALUES (:id, :tenant, 'request', :category, :description, :category, :location,
 			:longitude, :latitude, 'submitted', :reference, CAST(:contact AS jsonb), :firstPhoto,
-			ARRAY(SELECT jsonb_array_elements_text(CAST(:photos AS jsonb)))) RETURNING id`,
+			ARRAY(SELECT jsonb_array_elements_text(CAST(:photos AS jsonb))))
+			ON CONFLICT (id) DO NOTHING RETURNING id`,
 			{ ...values, firstPhoto: values.photos[0] || null, photos: JSON.stringify(values.photos) }, tx);
-		await rows(`INSERT INTO civic.history(id, tenant_id, request_id, new_status)
-			VALUES (:history, :tenant, :id, 'submitted') RETURNING id`, { ...values, history: randomUUID() }, tx);
+		if (inserted) {
+			await rows(`INSERT INTO civic.history(id, tenant_id, request_id, new_status)
+				VALUES (:history, :tenant, :id, 'submitted') RETURNING id`, { ...values, history: randomUUID() }, tx);
+			result = { reference: values.reference, status: publicStatus("submitted", portal.settings.states) };
+			return;
+		}
+		const [existing] = await rows<{
+			reference: string; status: string; category: string; description: string; location: string;
+			longitude: number | null; latitude: number | null; contact: unknown; photos: string[];
+		}>(`SELECT reference, status, category, description, location, longitude, latitude, contact, photos
+			FROM civic.records WHERE id = :id AND tenant_id = :tenant AND kind = 'request'`, values, tx);
+		const savedContact = typeof existing?.contact === "string" ? JSON.parse(existing.contact) : existing?.contact;
+		const sameContact = contact === null ? savedContact == null :
+			!!savedContact && savedContact.name === contact.name && savedContact.email === contact.email && savedContact.phone === contact.phone;
+		const samePhotos = !!existing && existing.photos.length === values.photos.length &&
+			existing.photos.every((photo, index) => photo === values.photos[index]);
+		// Coordinates can be corrected later by field staff, so they are not part of retry identity.
+		if (!existing || existing.category !== values.category || existing.description !== values.description ||
+			existing.location !== values.location || !sameContact || !samePhotos) {
+			throw new CivicError(409, "This report ID was already used for a different request");
+		}
+		result = { reference: existing.reference, status: publicStatus(existing.status, portal.settings.states) };
 	});
-	res.status(201).json({ reference: values.reference, status: publicStatus("submitted", portal.settings.states) });
+	res.status(201).json(result!);
 }));
 civicRouter.post("/public/:slug/track", rateLimit, endpoint(async (req, res) => {
 	const portal = await portalBySlug(req.params.slug);

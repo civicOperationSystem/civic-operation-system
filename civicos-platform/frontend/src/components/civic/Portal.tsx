@@ -1,17 +1,17 @@
 'use client';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { civicApi, CivicRecord, Portal as PortalData, displayDate, readPublicPhoto } from '@/lib/civic';
+import { civicApi, CivicApiError, CivicRecord, Portal as PortalData, displayDate, readPublicPhoto } from '@/lib/civic';
+import {
+  queuePublicReport, readOrganizationDirectory, readPortalCache, readPortalCacheForDomain, saveOrganizationDirectory,
+  savePortalSnapshot, savePublicRequestDetail, updatePublicReport, type PendingPublicReport, type PublicCalendarRequest,
+  type PublicReport, type PublicRequestDetail,
+} from '@/lib/portal-offline';
 import MapEmbed from './MapEmbed';
 import styles from './civic.module.css';
 
 const kinds = ['all', 'service', 'announcement', 'event', 'project', 'facility', 'document', 'emergency', 'infrastructure'];
 const calendarMonths = Array.from({ length: 12 }, (_, month) => month);
-type PublicCalendarRequest = { id: string; title: string; category: string | null; status: string; created_at: string; completed_at: string | null };
-type PublicRequestDetail = PublicCalendarRequest & {
-  description: string; location: string; longitude: number | null; latitude: number | null; updated_at: string;
-  photos: string[]; history: { status: string; timestamp: string }[];
-};
 export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [slug, setSlug] = useState(initialSlug);
   const [organizations, setOrganizations] = useState<{ name: string; slug: string }[]>([]);
@@ -35,6 +35,12 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [mapFocus, setMapFocus] = useState<{ title: string; point: [number, number] } | null>(null);
   const [submitted, setSubmitted] = useState('');
   const [anonymous, setAnonymous] = useState(true);
+  const [online, setOnline] = useState(true);
+  const [offlineSnapshot, setOfflineSnapshot] = useState(false);
+  const [offlineSavedAt, setOfflineSavedAt] = useState('');
+  const [pendingReports, setPendingReports] = useState<PendingPublicReport[]>([]);
+  const [offlineShellError, setOfflineShellError] = useState('');
+  const syncingReports = useRef(false);
   async function load(nextSlug?: string, refresh = false) {
     setError(''); setRefreshNotice(''); setBusy(true);
     try {
@@ -45,6 +51,13 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         civicApi<PublicCalendarRequest[]>(`/public/${org.slug}/requests/calendar`),
       ]);
       setPortal(org); setSlug(org.slug); setContent(records); setCalendarRequests(requests);
+      setOfflineSnapshot(false);
+      try {
+        const saved = await savePortalSnapshot(org.slug, { portal: org, content: records, calendarRequests: requests });
+        setPendingReports(saved.reports); setOfflineSavedAt(saved.savedAt);
+      } catch (failure) {
+        setError(`Portal loaded, but offline data could not be saved: ${failure instanceof Error ? failure.message : String(failure)}`);
+      }
       if (refresh) {
         setRevision(value => value + 1);
         setRefreshNotice('Portal refreshed.');
@@ -55,29 +68,113 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       document.documentElement.lang = org.settings.language;
       document.title = `${org.name} | CivicOS`;
     } catch (failure) {
-      if (!refresh) setPortal(null);
-      setError(failure instanceof Error ? failure.message : 'Could not load portal');
+      try {
+        const cached = nextSlug ? await readPortalCache(nextSlug) : await readPortalCacheForDomain(window.location.hostname);
+        if (cached) {
+          setPortal(cached.portal); setSlug(cached.portal.slug); setContent(cached.content);
+          setCalendarRequests(cached.calendarRequests); setPendingReports(cached.reports);
+          setOfflineSnapshot(true); setOfflineSavedAt(cached.savedAt); setAnonymous(cached.portal.settings.anonymous);
+          document.documentElement.lang = cached.portal.settings.language;
+          document.title = `${cached.portal.name} | CivicOS`;
+          setError('');
+        } else {
+          if (!refresh) setPortal(null);
+          const domainHasNoPortal = !nextSlug && failure instanceof CivicApiError &&
+            failure.status === 404 && failure.message === 'No portal is configured for this domain';
+          setError(domainHasNoPortal ? '' : failure instanceof Error ? failure.message : 'Could not load portal');
+        }
+      } catch (cacheFailure) {
+        if (!refresh) setPortal(null);
+        setError(cacheFailure instanceof Error ? cacheFailure.message : 'Could not read the saved portal');
+      }
     }
     finally { setBusy(false); }
   }
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    update();
+    window.addEventListener('online', update); window.addEventListener('offline', update);
+    return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); };
+  }, []);
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) { setOfflineShellError('Offline page caching requires a current browser over HTTPS.'); return; }
+    let active = true;
+    void navigator.serviceWorker.register('/field-sw.js', { scope: '/' })
+      .then(registration => navigator.serviceWorker.ready.then(() => registration))
+      .then(registration => {
+        if (!active) return;
+        if (registration.active) registration.active.postMessage({ type: 'CACHE_APP_SHELL', url: window.location.href });
+      })
+      .catch(failure => {
+        if (active) setOfflineShellError(`Offline page caching failed: ${failure instanceof Error ? failure.message : String(failure)}`);
+      });
+    return () => { active = false; };
+  }, []);
   useEffect(() => { void load(initialSlug || new URLSearchParams(window.location.search).get('org') || undefined); }, [initialSlug]);
   useEffect(() => {
     const abort = new AbortController();
     void civicApi<{ name: string; slug: string }[]>('/public/organizations/list', { signal: abort.signal })
-      .then(items => {
+      .then(async items => {
         if (!Array.isArray(items) || items.some(item => !item || typeof item.name !== 'string' || typeof item.slug !== 'string')) {
           throw new Error('The organization directory returned invalid data. Check the backend deployment.');
         }
+        await saveOrganizationDirectory(items);
         if (!abort.signal.aborted) setOrganizations(items);
       })
-      .catch(failure => {
-        if (!abort.signal.aborted) setOrganizationsError(failure instanceof Error ? failure.message : 'Could not load organizations');
+      .catch(async failure => {
+        if (abort.signal.aborted) return;
+        try {
+          const cached = await readOrganizationDirectory();
+          if (cached) setOrganizations(cached);
+          else setOrganizationsError(failure instanceof Error ? failure.message : 'Could not load organizations');
+        } catch (cacheFailure) {
+          setOrganizationsError(cacheFailure instanceof Error ? cacheFailure.message : 'Could not read the saved organization directory');
+        }
       })
       .finally(() => { if (!abort.signal.aborted) setOrganizationsLoading(false); });
     return () => abort.abort();
   }, []);
+  const syncReports = useCallback(async () => {
+      const activeSlug = portal?.slug;
+      if (!activeSlug || !navigator.onLine || syncingReports.current) return;
+      syncingReports.current = true;
+      try {
+        const cached = await readPortalCache(activeSlug);
+        for (const pending of cached?.reports.filter(item => !item.reference && !item.error) || []) {
+          if (!navigator.onLine) break;
+          if (!pending.report) continue;
+          try {
+            const response = await civicApi<{ reference: string }>(`/public/${activeSlug}/requests`, {
+              method: 'POST', body: { ...pending.report, client_operation_id: pending.id },
+            });
+            await updatePublicReport(activeSlug, pending.id, current => ({
+              ...current, reference: response.reference, report: undefined, error: undefined,
+            }));
+          } catch (failure) {
+            const message = failure instanceof Error ? failure.message : 'Could not submit saved request';
+            if (!navigator.onLine || failure instanceof TypeError ||
+              failure instanceof CivicApiError && (failure.status === 429 || failure.status >= 500)) break;
+            await updatePublicReport(activeSlug, pending.id, current => ({ ...current, error: message }));
+          }
+        }
+        const updated = await readPortalCache(activeSlug);
+        if (updated) {
+          setPendingReports(updated.reports);
+          const latest = [...updated.reports].reverse().find(item => item.reference);
+          if (latest?.reference) setSubmitted(latest.reference);
+        }
+      } catch (failure) {
+        setError(failure instanceof Error ? failure.message : 'Could not synchronize saved reports');
+      } finally { syncingReports.current = false; }
+  }, [portal?.slug]);
+  useEffect(() => { if (online) void syncReports(); }, [online, syncReports]);
+  useEffect(() => {
+    if (!online) return;
+    const timer = window.setInterval(() => { void syncReports(); }, 30000);
+    return () => window.clearInterval(timer);
+  }, [online, syncReports]);
   async function report(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError(''); setBusy(true);
+      event.preventDefault(); setError(''); setBusy(true);
     const form = event.currentTarget;
     const data = new FormData(form);
     try {
@@ -86,16 +183,28 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       const photos = await Promise.all(files.map(readPublicPhoto));
       const longitude = data.get('longitude')?.toString();
       const latitude = data.get('latitude')?.toString();
-      const response = await civicApi<{ reference: string }>(`/public/${portal!.slug}/requests`, {
-        method: 'POST', body: {
-          category: data.get('category'), description: data.get('description'), location: data.get('location'),
-          longitude: longitude ? Number(longitude) : null, latitude: latitude ? Number(latitude) : null,
-          anonymous, photos, contact: anonymous ? null : {
-            name: data.get('name'), email: data.get('email'), phone: data.get('phone'),
-          },
+      const report: PublicReport = {
+        category: String(data.get('category')), description: String(data.get('description')), location: String(data.get('location')),
+        longitude: longitude ? Number(longitude) : null, latitude: latitude ? Number(latitude) : null,
+        anonymous, photos, contact: anonymous ? null : {
+          name: String(data.get('name')), email: String(data.get('email')), phone: String(data.get('phone') || ''),
         },
-      });
-      setSubmitted(response.reference); setPoint(null); form.reset();
+      };
+      let queued: PendingPublicReport;
+      try {
+        queued = await queuePublicReport(portal!.slug, report);
+      } catch (storageFailure) {
+        if (!navigator.onLine) throw storageFailure;
+        const response = await civicApi<{ reference: string }>(`/public/${portal!.slug}/requests`, {
+          method: 'POST', body: { ...report, client_operation_id: crypto.randomUUID() },
+        });
+        setSubmitted(response.reference); setPoint(null); form.reset();
+        setError(`Request submitted, but offline storage is unavailable: ${storageFailure instanceof Error ? storageFailure.message : String(storageFailure)}`);
+        return;
+      }
+      setPendingReports(current => [...current, queued]);
+      setSubmitted(''); setPoint(null); form.reset();
+      if (navigator.onLine) await syncReports();
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not submit request'); }
     finally { setBusy(false); }
   }
@@ -103,10 +212,29 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
     setError('');
     setBusy(true);
     try {
-      setPublicRequestDetail(await civicApi<PublicRequestDetail>(`/public/${portal!.slug}/requests/${id}`));
+      if (!navigator.onLine) {
+        const cached = await readPortalCache(portal!.slug);
+        const detail = cached?.details[id];
+        if (!detail) throw new Error('This public request has not been saved for offline viewing.');
+        setPublicRequestDetail(detail);
+      } else {
+        const detail = await civicApi<PublicRequestDetail>(`/public/${portal!.slug}/requests/${id}`);
+        setPublicRequestDetail(detail);
+        await savePublicRequestDetail(portal!.slug, detail);
+      }
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Could not load public request');
     } finally { setBusy(false); }
+  }
+  async function retryPublicReport(id: string) {
+    try {
+      await updatePublicReport(portal!.slug, id, pending => ({ ...pending, error: undefined }));
+      const cached = await readPortalCache(portal!.slug);
+      if (cached) setPendingReports(cached.reports);
+      await syncReports();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not retry the saved request');
+    }
   }
   const hasPoint = (item: CivicRecord) => item.longitude !== null && item.latitude !== null;
   function openOnMap(item: CivicRecord) {
@@ -134,6 +262,12 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       <Link href="/" className={styles.brand}>C<span>O</span> <strong>CivicOS</strong></Link>
       <div className={styles.headerLinks}>{!portal && <Link href="/platform">Platform owner</Link>}<Link href={`/staff?org=${encodeURIComponent(portal?.slug || slug)}`}>Staff sign in</Link><Link href={`/field?org=${encodeURIComponent(portal?.slug || slug)}`}>Field workspace</Link></div>
     </header>
+    {offlineShellError && <p role="alert" className={styles.error}>{offlineShellError}</p>}
+    {portal && <p role="status" className={styles.hint}>
+      {!online || offlineSnapshot
+        ? `Offline — showing saved public information${offlineSavedAt ? ` from ${displayDate(offlineSavedAt, portal.settings)}` : ''}.`
+        : 'Public information is saved on this device for offline viewing.'}
+    </p>}
     {!portal ? <section className={styles.welcome}>
       <p className={styles.eyebrow}>ONE COMMUNITY. ONE CONNECTED PLATFORM.</p>
       <h1>Everyday services.<br />A stronger community.</h1>
@@ -172,6 +306,15 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         </div>
         <aside className={styles.heroAside}><span className={styles.pulse} /> Open, local, accountable<p>One platform for residents,<br />staff, and field teams.</p><strong>{settings?.departments.length} departments · {settings?.services.length} services</strong></aside>
       </section>
+      {!!pendingReports.length && <section className={styles.card} aria-label="Saved public reports">
+        <h2>Saved reports</h2>
+        <p className={styles.hint}>Unsubmitted reports are stored on this device and will be sent when a connection is available. Contact details and photos you entered are included.</p>
+        <ul>{pendingReports.map(report => <li key={report.id}>
+          {report.reference ? <>Submitted · Tracking reference <code>{report.reference}</code></> :
+            report.error ? <>Needs attention · {report.error} <button type="button" className={styles.secondary} onClick={() => void retryPublicReport(report.id)}>Retry</button></> :
+              <>Waiting to send · saved {new Date(report.createdAt).toLocaleString()}</>}
+        </li>)}</ul>
+      </section>}
       <nav className={styles.tabs} aria-label="Portal sections">
         {['overview', 'map', 'calendar', 'report'].map(tab => <button key={tab} aria-current={view === tab ? 'page' : undefined} onClick={() => { setView(tab); setError(''); setMapFocus(null); }}>{({ overview: 'Community hub', map: 'Explore the map', calendar: 'Public requests', report: 'Report a problem' })[tab]}</button>)}
       </nav>
@@ -196,7 +339,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         </>}
         {view === 'map' && <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>EXPLORE YOUR COMMUNITY</p><h2>Places, infrastructure & public work</h2></div></div>
           {mapFocus && <div className={styles.inline} role="status"><p className={styles.hint}>Showing <strong>{mapFocus.title}</strong> on the map.</p><button type="button" className={styles.secondary} onClick={() => setMapFocus(null)}>Show the whole community</button></div>}
-          <p className={styles.hint}>This map is read-only by default. Use the zoom controls to inspect an area, or enable interaction to browse public locations and open a request.</p><MapEmbed portal={portal} revision={revision} locked center={mapFocus?.point} marker={mapFocus?.point} zoom={mapFocus ? 16 : undefined} onSelect={id => void selectPublicRequest(id)} />
+          <p className={styles.hint}>This map is read-only by default. Use the zoom controls to inspect an area, or enable interaction to browse public locations and open a request.</p>{online ? <MapEmbed portal={portal} revision={revision} locked center={mapFocus?.point} marker={mapFocus?.point} zoom={mapFocus ? 16 : undefined} onSelect={id => void selectPublicRequest(id)} /> : <p className={styles.hint}>The interactive map needs an internet connection. Saved portal information remains available in the Community hub and Public requests sections.</p>}
           {error && <p role="alert" className={styles.error}>{error}</p>}
           <section className={styles.publicTickets}><h3>Public request tickets</h3>{!calendarRequests.length ? <p className={styles.hint}>There are no public request tickets yet.</p> :
             <div className={styles.cards}>{calendarRequests.map(record => <button key={record.id} className={styles.card} onClick={() => void selectPublicRequest(record.id)}><span className={styles.tag}>{record.status}</span><strong>{record.title}</strong><small>{record.category || 'Community request'}</small><span>View public ticket details</span></button>)}</div>}
@@ -241,7 +384,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             {!anonymous && <><label>Your name<input name="name" required maxLength={100} autoComplete="name" /></label><label>Email<input name="email" type="email" required maxLength={254} autoComplete="email" /></label><label>Phone (optional)<input name="phone" maxLength={50} type="tel" autoComplete="tel" /></label></>}
             <button disabled={busy} className={styles.primary}>{busy ? 'Submitting…' : 'Submit request'}</button>
             {error && <p role="alert" className={styles.error}>{error}</p>}
-          </form></section><aside><h3>Pin the location</h3><p className={styles.hint}>Click on the map to add coordinates. Contact details are never published.</p><MapEmbed portal={portal} onPoint={setPoint} /></aside></div>}
+          </form></section><aside><h3>Pin the location</h3><p className={styles.hint}>Click on the map to add coordinates. Contact details are never published.</p>{online ? <MapEmbed portal={portal} onPoint={setPoint} /> : <p className={styles.hint}>The map needs an internet connection. You can enter the coordinates manually above.</p>}</aside></div>}
       </div>
       {publicRequestDetail && <div className={styles.modalBackdrop} role="presentation">
         <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="public-ticket-title">
@@ -250,7 +393,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             {publicRequestDetail.photos.map((photo, index) => <img key={index} className={styles.ticketPhoto} src={photo} alt={`Ticket photo ${index + 1} for ${publicRequestDetail.title}`} />)}
             <h3>Public status updates</h3><ol className={styles.timeline}>{publicRequestDetail.history.map((event, index) => <li key={index}><strong>{event.status}</strong><small>{displayDate(event.timestamp, portal.settings)}</small></li>)}</ol></div>
             <aside><h3>Public location</h3><p>{publicRequestDetail.location || 'No location description was provided.'}</p>{publicRequestDetail.longitude !== null && publicRequestDetail.latitude !== null ?
-              <><p className={styles.hint}>Pinned coordinates: {publicRequestDetail.latitude}, {publicRequestDetail.longitude}</p><MapEmbed portal={portal} center={[publicRequestDetail.longitude, publicRequestDetail.latitude]} marker={[publicRequestDetail.longitude, publicRequestDetail.latitude]} zoom={16} focused locked /></> :
+              <><p className={styles.hint}>Pinned coordinates: {publicRequestDetail.latitude}, {publicRequestDetail.longitude}</p>{online && <MapEmbed portal={portal} center={[publicRequestDetail.longitude, publicRequestDetail.latitude]} marker={[publicRequestDetail.longitude, publicRequestDetail.latitude]} zoom={16} focused locked />}</> :
               <p className={styles.hint}>A map location was not provided for this ticket.</p>}</aside></div>
         </section>
       </div>}
@@ -261,7 +404,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             <div className={styles.inline}>{publicContentDetail.url && <a className={styles.primary} href={publicContentDetail.url} target="_blank" rel="noopener noreferrer">Open document or information ↗</a>}
               {hasPoint(publicContentDetail) && <button type="button" className={styles.secondary} onClick={() => openOnMap(publicContentDetail)}>Open in community map</button>}</div></div>
             <aside><h3>Location</h3>{publicContentDetail.longitude !== null && publicContentDetail.latitude !== null ?
-              <MapEmbed portal={portal} center={[publicContentDetail.longitude, publicContentDetail.latitude]} zoom={16} /> :
+              online ? <MapEmbed portal={portal} center={[publicContentDetail.longitude, publicContentDetail.latitude]} zoom={16} /> : <p className={styles.hint}>Map unavailable offline. Coordinates: {publicContentDetail.latitude}, {publicContentDetail.longitude}</p> :
               <p className={styles.hint}>A map location was not provided for this information.</p>}</aside></div>
         </section>
       </div>}

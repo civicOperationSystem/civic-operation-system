@@ -10,6 +10,20 @@ let workerToken;
 let requestId;
 test.describe.configure({ mode: 'serial' });
 
+async function waitForOfflineShell(page) {
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) await new Promise(resolve =>
+      navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }));
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      if (await caches.match(location.href)) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error('The offline application shell was not cached');
+  });
+}
+
 test.beforeAll(async ({ request }) => {
   const ownerLogin = await request.post(`${api}/platform/login`, { data: { access_token: magicLinkToken('owner@example.org') } });
   expect(ownerLogin.status()).toBe(200);
@@ -142,4 +156,33 @@ test('stale queued work is retained for review instead of overwriting dispatch c
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Discard pending updates for this ticket' }).click();
   await expect(page.getByText(/^Online · 0 pending updates/)).toBeVisible();
+});
+
+test('public portal opens offline and submits a queued report once reconnected', async ({ page, context }) => {
+  await page.goto(`http://127.0.0.1:3310/portal/${slug}`);
+  await expect(page.getByRole('heading', { name: 'Offline Test Town' })).toBeVisible();
+  await waitForOfflineShell(page);
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByText(/Offline — showing saved public information/)).toBeVisible();
+  await page.getByRole('button', { name: 'Report a problem' }).first().click();
+  await page.getByLabel('Category').selectOption('Pothole');
+  await page.getByLabel('What happened?').fill('Report saved while offline');
+  await page.getByLabel('Location').fill('Community garden');
+  await page.getByRole('button', { name: 'Submit request' }).click();
+  await expect(page.getByText(/Waiting for internet/)).toBeVisible();
+  await context.setOffline(false);
+  await expect(page.getByText(/Submitted · Tracking reference/)).toBeVisible({ timeout: 60000 });
+});
+
+test('returning staff can reopen a read-only cached workspace offline and sign out locally', async ({ page, context }) => {
+  await signInWithMagicLink(page, 'staff', slug, 'offline-admin@example.org');
+  await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
+  await waitForOfflineShell(page);
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByText(/Offline — read-only snapshot for offline-admin@example.org/)).toBeVisible({ timeout: 30000 });
+  await expect(page.getByRole('button', { name: 'Email me a sign-in link' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Email me a sign-in link', exact: true })).toBeVisible();
 });

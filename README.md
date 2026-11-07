@@ -56,7 +56,7 @@ Stop if provisioning fails. Repeating provisioning for an existing slug preserve
 | Field workspace | http://localhost:3100/field?org=town-a |
 | Community map | http://localhost:3101/civic?org=town-a |
 
-Visit http://localhost:3100/platform to sign in as the configured platform owner and create organizations. That owner appoints one Bottom admin for each organization; Bottom admins sign in at the organization’s staff URL and add/manage only their own staff from **People & roles**. The field app is online and mobile-friendly; it does not provide offline synchronization.
+Visit http://localhost:3100/platform to sign in as the configured platform owner and create organizations. That owner appoints one Bottom admin for each organization; Bottom admins sign in at the organization’s staff URL and add/manage only their own staff from **People & roles**. The mobile-friendly portal and staff workspace support limited offline use; field work also supports queued offline updates.
 
 ### Supabase email sign-in
 
@@ -217,11 +217,20 @@ Run the database migration before deploying offline support: it adds `civic.fiel
 
 1. Use a current browser over HTTPS (localhost also works). Sign in to `/field?org=your-workspace` online and wait for assignments to finish loading. All assigned tickets and details are cached, including private notes and photos; refresh online before leaving for the field.
 2. The field shell is cached by a service worker. After its first successful installation, the workspace can reopen without a connection, using this device's last field identity even if its online session has expired. This is local device access, not authorization to write to the server.
-3. Offline changes appear as pending, not server-confirmed. Coordinate corrections can be typed and saved without the map. The three-photo limit includes pending photos. New resident reports, maps/tiles and chat are not available offline.
+3. Offline changes appear as pending, not server-confirmed. Coordinate corrections can be typed and saved without the map. The three-photo limit includes pending photos. Maps/tiles and chat are not available offline; resident reports can be queued from the public portal as described below.
 4. Reconnect and keep the workspace open to synchronize (also retried every 30 seconds), or press **Sync pending updates**. The server checks the current account, permissions, assignment and ticket version on every write. If a ticket changed or access was removed, its queued chain stops and stays visible for review. Copy needed notes, discard that ticket's pending updates, refresh online and resubmit against the current assignment; conflicts never silently overwrite dispatch changes.
 5. Use trusted, individually secured devices: cached data is private browser storage, not encrypted by CivicOS. Signing out of the field workspace clears that identity's cached assignments and queued work across its workspaces on the device; a confirmation warns before clearing. Synchronize before signing out. Browser storage eviction, clearing site data, private browsing and device loss can remove unsent changes. First-time sign-in and server authorization always require a connection; expired sessions may require signing in again.
 
 Synchronization runs in the open workspace, not while the browser is closed. Storage/quota failures are surfaced explicitly and an update is never reported as queued until its local transaction commits.
+
+### Offline portal and staff access
+
+Use a current browser over HTTPS (localhost also works) and visit the portal and staff workspace online first. The service worker saves the app shell and static assets for the home, portal, staff and field routes; it does not cache API responses or authentication callbacks.
+
+- The portal saves its public organization settings, published information, public request calendar and public request details that have been opened. Previously saved public information can be read offline. The interactive map and external links need a connection.
+- Residents can save a report while offline. It appears as waiting on this device and is submitted automatically after reconnection while the portal is open. Reports use a stable operation ID so retries after a lost response do not create duplicate tickets. Validation failures remain visible for retry; submitted reports retain only their tracking reference in the offline queue.
+- Staff who have signed in and loaded their workspace online before can reopen a cached snapshot when offline. This is read-only and includes the most recently loaded request list and organization information, not request details, member management, chat or maps. New sign-in links and all updates require internet; reconnect to re-verify current permissions before making changes.
+- Portal reports awaiting submission may include resident contact details and photos; cached staff snapshots may include request descriptions and locations. Browser storage is not encrypted by CivicOS. Use individually secured devices, avoid sensitive details in public reports, and sign out of staff access to clear its cached workspace. Browser storage eviction or clearing site data can remove saved data and unsent reports.
 
 ## Validation
 

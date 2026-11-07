@@ -264,6 +264,24 @@ describe("CivicOS end-to-end workflow and private-safe tracking", () => {
 		requestId = list.body[0].id;
 		expect(list.body[0].reference).toBe(reference);
 	});
+	it("retries offline public reports idempotently", async () => {
+		const clientOperationId = randomUUID();
+		const report = {
+			client_operation_id: clientOperationId, category: "Pothole", description: "Offline report",
+			location: "Community park", anonymous: true, photos: []
+		};
+		const first = await request(app).post(`/api/civic/public/${slugA}/requests`).send(report);
+		const retry = await request(app).post(`/api/civic/public/${slugA}/requests`).send(report);
+		expect(first.status).toBe(201);
+		expect(retry.status).toBe(201);
+		expect(retry.body.reference).toBe(first.body.reference);
+		const conflictingRetry = await request(app).post(`/api/civic/public/${slugA}/requests`)
+			.send({ ...report, description: "Different report" });
+		expect(conflictingRetry.status).toBe(409);
+		const history = await database.tenantTransaction(tenantA, tx =>
+			database.rows<{ count: number }>("SELECT count(*)::int AS count FROM civic.history WHERE request_id = :id", { id: clientOperationId }, tx));
+		expect(history[0]?.count).toBe(1);
+	});
 	it("rejects invalid category, coordinates, contact and image payloads", async () => {
 		const base = { category: "Pothole", description: "Damage", location: "Library", anonymous: true };
 		for (const extra of [

@@ -48,6 +48,7 @@ test('main portal offers public organizations and opens the selected workspace',
     }
   });
   await page.goto('/portal');
+  await expect(page.getByText('No portal is configured for this domain')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: organization.name, exact: true })).toBeVisible();
   await expect(page.locator('#organization-suggestions option')).toHaveAttribute('value', organization.name);
   await page.getByRole('searchbox').fill('no-matching-organization');
