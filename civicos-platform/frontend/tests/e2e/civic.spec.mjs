@@ -41,6 +41,8 @@ test('main portal offers public organizations and opens the selected workspace',
       await route.fulfill({ status: 404, json: { message: 'No portal is configured for this domain' } });
     } else if (path.endsWith('/content')) {
       await route.fulfill({ json: [] });
+    } else if (path.endsWith('/requests/calendar')) {
+      await route.fulfill({ json: [] });
     } else if (path.endsWith(`/${organization.slug}`)) {
       await route.fulfill({ json: organization });
     } else {
@@ -51,11 +53,12 @@ test('main portal offers public organizations and opens the selected workspace',
   await expect(page.getByText('No portal is configured for this domain')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: organization.name, exact: true })).toBeVisible();
   await expect(page.locator('#organization-suggestions option')).toHaveAttribute('value', organization.name);
-  await page.getByRole('searchbox').fill('no-matching-organization');
+  const organizationSearch = page.getByRole('combobox', { name: 'Organization name or workspace address', exact: true });
+  await organizationSearch.fill('no-matching-organization');
   await expect(page.getByText('No organizations match your search.')).toBeVisible();
-  await page.getByRole('searchbox').fill(organization.name);
+  await organizationSearch.fill(organization.name);
   await expect(page.getByRole('heading', { name: organization.name, exact: true })).toBeVisible();
-  await page.getByRole('searchbox').fill('/portal/directory-test');
+  await organizationSearch.fill('/portal/directory-test');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByRole('link', { name: `Open ${organization.name} portal` }).click();
   await expect(page.getByRole('heading', { name: organization.name, exact: true })).toBeVisible();
@@ -85,12 +88,13 @@ test('resident → staff → mobile field → verification → private-safe trac
   await expect(page.getByLabel('Latitude', { exact: true })).toHaveValue(await reportMap.getByLabel('Latitude', { exact: true }).inputValue());
   await page.getByRole('button', { name: 'Submit request', exact: true }).click();
   await expect(page.getByText('Request received.', { exact: true })).toBeVisible();
-  const reference = await page.locator('code').innerText();
+  const reference = await page.getByRole('status').filter({ hasText: 'Request received.' }).locator('code').innerText();
   expect(reference).toMatch(/^[A-F0-9]{4}(?:-[A-F0-9]{4}){7}$/);
 
   await signInWithMagicLink(page, 'staff', slug, 'admin@example.org');
   await expect(page.getByRole('heading', { name: 'Service requests', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'People & roles' }).click();
+  await page.getByLabel('Name', { exact: true }).fill('Field Worker');
   await page.getByLabel('Email', { exact: true }).fill('worker@example.org');
   await page.getByRole('combobox', { name: 'Role', exact: true }).selectOption('field');
   await page.getByRole('button', { name: 'Create member' }).click();
@@ -104,8 +108,9 @@ test('resident → staff → mobile field → verification → private-safe trac
   await page.getByLabel('Write a message').fill('Channel dispatch message');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(page.getByText('Channel dispatch message', { exact: true })).toBeVisible();
-  await page.getByLabel('Message a teammate').selectOption({ label: 'worker@example.org · field' });
-  await expect(page.getByRole('heading', { name: 'worker@example.org', exact: true })).toBeVisible();
+  await page.getByLabel('Find a teammate by name').fill('Field Worker');
+  await page.getByRole('option', { name: 'Field Worker field', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Field Worker', exact: true })).toBeVisible();
   await page.getByLabel('Write a message').fill('Private dispatch message');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(page.getByText('Private dispatch message', { exact: true })).toBeVisible();
@@ -114,27 +119,28 @@ test('resident → staff → mobile field → verification → private-safe trac
   const teammate = await teammateContext.newPage();
   await signInWithMagicLink(teammate, 'staff', slug, 'worker@example.org');
   await teammate.getByRole('button', { name: 'Staff chat', exact: true }).click();
-  await teammate.getByRole('button', { name: /admin@example\.org/ }).click();
-  await expect(teammate.getByText('Private dispatch message', { exact: true })).toBeVisible();
+  await teammate.getByRole('button', { name: /↗ Admin/ }).click();
+  await expect(teammate.getByRole('list', { name: 'Chat messages' }).getByText('Private dispatch message', { exact: true })).toBeVisible();
   await teammateContext.close();
   await page.getByRole('button', { name: 'Service requests', exact: true }).click();
-  await page.getByRole('button', { name: 'Pothole', exact: true }).click();
-  await page.getByLabel('Internal notes').fill('Private dispatch note — never public');
+  await page.getByRole('button', { name: /^Pothole Pothole Library entrance / }).click();
+  await page.getByLabel('Private note', { exact: true }).fill('Private dispatch note — never public');
   await page.getByRole('button', { name: 'Move to Reviewed' }).click();
   await expect(page.getByText('Workflow updated. The transition has been recorded.', { exact: true })).toBeVisible();
-  await page.getByRole('combobox', { name: 'Assign a worker' }).selectOption({ label: 'worker@example.org · field' });
+  await page.getByRole('combobox', { name: 'Assign a worker' }).selectOption({ label: 'Field Worker · field' });
   await page.getByRole('button', { name: 'Save assignment' }).click();
   await expect(page.getByText('Assignment recorded', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Move to Crew assigned' }).click();
   await expect(page.getByText('Workflow updated. The transition has been recorded.', { exact: true })).toBeVisible();
-  await page.getByLabel("Publish this request's coordinates and category on the public map").check();
-  await expect(page.getByText('Map visibility updated', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Publish completed ticket description to the public portal')).toHaveCount(0);
 
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const field = await mobile.newPage();
   await signInWithMagicLink(field, 'field', slug, 'worker@example.org');
   await expect(field.getByRole('heading', { name: 'Your work, in one place' })).toBeVisible();
   await field.getByRole('button', { name: 'Community map', exact: true }).click();
+  await field.locator('iframe[title="Interactive CivicOS community map"]').scrollIntoViewIfNeeded();
+  await field.getByRole('button', { name: 'Enable map interaction', exact: true }).click();
   const fieldMap = field.frameLocator('iframe[title="Interactive CivicOS community map"]').first();
   await expect(fieldMap.getByText('Permission-aware workspace', { exact: true })).toBeVisible();
   await expect(fieldMap.getByText('1 authorized locations', { exact: true })).toBeVisible();
@@ -142,17 +148,20 @@ test('resident → staff → mobile field → verification → private-safe trac
   await fieldMap.getByRole('button', { name: /Pothole/ }).click();
   await expect(field.getByRole('heading', { name: 'Add completion evidence', exact: true })).toBeVisible();
   for (let index = 0; index < 3; index++) {
-    await field.getByLabel(/Completion photo/).setInputFiles({
+    await field.getByLabel(/^Upload completion photo/).setInputFiles({
       name: `field-photo-${index}.png`, mimeType: 'image/png', buffer: Buffer.concat([png, Buffer.alloc(2 * 1024 * 1024)]),
     });
     await expect(field.getByAltText(`Field work photo ${index + 1}`)).toBeVisible();
+    await expect(field.getByText(/^Online · 0 pending updates/)).toBeVisible();
   }
-  await expect(field.getByLabel('Completion photo (3/3)')).toBeDisabled();
-  await field.getByLabel('Internal notes').fill('Crew began work');
+  await expect(field.getByLabel('Upload completion photo (3/3)')).toBeDisabled();
+  await field.getByLabel('Private note', { exact: true }).fill('Crew began work');
   await field.getByRole('button', { name: 'Start work', exact: true }).click();
-  await expect(field.getByText('Workflow updated. The transition has been recorded.', { exact: true })).toBeVisible();
+  await expect(field.getByText('Update saved on this device. Check pending updates for sync status.', { exact: true })).toBeVisible();
+  await expect(field.getByText(/^Online · 0 pending updates/)).toBeVisible();
   await field.getByRole('button', { name: 'Complete work', exact: true }).click();
   await expect(field.getByRole('button', { name: 'Complete work', exact: true })).toHaveCount(0);
+  await expect(field.getByText(/^Online · 0 pending updates/)).toBeVisible();
   await expect(field.getByRole('button', { name: 'Move to Verified' })).toHaveCount(0);
   const calendar = await (await page.request.get(`/api/civic/public/${slug}/requests/calendar`)).json();
   const publicId = calendar.find(record => record.title === 'Pothole').id;
@@ -161,11 +170,14 @@ test('resident → staff → mobile field → verification → private-safe trac
   expect(await field.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await mobile.close();
 
-  await page.getByRole('button', { name: 'Pothole', exact: true }).click();
+  await page.getByRole('button', { name: /^Pothole Pothole Library entrance / }).click();
+  await page.getByLabel('Publish completed ticket description to the public portal').check();
+  await expect(page.getByText('Map visibility updated', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Move to Verified' }).click();
   await expect(page.getByText('Workflow updated. The transition has been recorded.', { exact: true })).toBeVisible();
   const after = await (await page.request.get(`/api/civic/public/${slug}/requests/${publicId}`)).json();
   expect(after.photos).toHaveLength(6);
+  expect(after.description).toBe('A dangerous pothole outside the library.');
   await page.getByRole('button', { name: 'Organization settings', exact: true }).click();
   await page.getByLabel('Organization name').fill('Connected Community');
   await page.getByRole('button', { name: 'Save organization settings' }).click();
@@ -173,13 +185,19 @@ test('resident → staff → mobile field → verification → private-safe trac
 
   await page.goto(`/portal/${slug}`);
   await expect(page.getByRole('heading', { name: 'Connected Community', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Track a request', exact: true }).first().click();
-  await page.getByLabel('Tracking reference').fill(reference);
-  await page.getByRole('button', { name: 'Check status' }).click();
-  await expect(page.getByText('Verified', { exact: true }).first()).toBeVisible();
+  const tracked = await page.request.post(`/api/civic/public/${slug}/track`, { data: { reference } });
+  expect(tracked.status()).toBe(200);
+  const tracking = await tracked.json();
+  expect(tracking.status).toBe('Verified');
+  expect(tracking.reference).toBe(reference);
+  expect(Object.keys(tracking).sort()).toEqual(['category', 'history', 'reference', 'reported', 'status', 'title', 'updated']);
+  expect(JSON.stringify(tracking)).not.toContain('Private dispatch note');
+  expect(JSON.stringify(tracking)).not.toContain('admin@example.org');
   await expect(page.getByText('Private dispatch note — never public')).toHaveCount(0);
   await expect(page.getByText('admin@example.org')).toHaveCount(0);
   await page.getByRole('button', { name: 'Explore the map' }).click();
+  await page.locator('iframe[title="Interactive CivicOS community map"]').scrollIntoViewIfNeeded();
+  await page.getByRole('button', { name: 'Enable map interaction', exact: true }).click();
   const map = page.frameLocator('iframe[title="Interactive CivicOS community map"]').first();
   await expect(map.getByText('1 authorized locations', { exact: true })).toBeVisible();
   await expect(map.getByRole('button', { name: /Pothole/ })).toBeVisible();

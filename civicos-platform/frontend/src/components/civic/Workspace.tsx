@@ -566,7 +566,10 @@ export default function Workspace({ field = false }: { field?: boolean }) {
           {has('transition') && <div className={styles.inline}>{[...new Set([...previousStates, ...nextStates])].filter(next => {
             const state = session.portal.settings.states.find(item => item.key === next);
             return (!field && has('read')) || (!!state && fieldCanEnter(state));
-          }).map(next => <button key={next} disabled={busy} className={previousStates.includes(next) ? styles.secondary : styles.primary} onClick={() => void transition(next)}>{previousStates.includes(next) ? `Move back to ${stateLabel(next)}` : field && next === 'in_progress' ? 'Start work' : field && next === 'completed' ? 'Complete work' : `Move to ${stateLabel(next)}`}</button>)}</div>}
+          }).map(next => {
+            const movingBack = previousStates.includes(next) && !nextStates.includes(next);
+            return <button key={next} disabled={busy} className={movingBack ? styles.secondary : styles.primary} onClick={() => void transition(next)}>{movingBack ? `Move back to ${stateLabel(next)}` : field && next === 'in_progress' ? 'Start work' : field && next === 'completed' ? 'Complete work' : `Move to ${stateLabel(next)}`}</button>;
+          })}</div>}
           {has('assign') && !field && <div className={styles.form}><label>Assign a worker<select value={worker} onChange={event => setWorker(event.target.value)}><option value="">Choose a team member</option>{members.filter(member => member.active).map(member => <option key={member.id} value={member.id}>{member.display_name} · {member.role}</option>)}</select></label>
             <button disabled={busy || !worker} className={styles.secondary} onClick={() => void action(async () => {
               await civicApi(`/staff/requests/${detail.id}/assign`, { token, method: 'POST', body: { assigned_to: worker, notes, note_visibility: noteVisibility } });
