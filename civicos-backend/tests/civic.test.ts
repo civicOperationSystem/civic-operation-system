@@ -270,17 +270,25 @@ describe("CivicOS end-to-end workflow and private-safe tracking", () => {
 			client_operation_id: clientOperationId, category: "Pothole", description: "Offline report",
 			location: "Community park", anonymous: true, photos: []
 		};
-		const first = await request(app).post(`/api/civic/public/${slugA}/requests`).send(report);
-		const retry = await request(app).post(`/api/civic/public/${slugA}/requests`).send(report);
-		expect(first.status).toBe(201);
-		expect(retry.status).toBe(201);
-		expect(retry.body.reference).toBe(first.body.reference);
-		const conflictingRetry = await request(app).post(`/api/civic/public/${slugA}/requests`)
-			.send({ ...report, description: "Different report" });
-		expect(conflictingRetry.status).toBe(409);
-		const history = await database.tenantTransaction(tenantA, tx =>
-			database.rows<{ count: number }>("SELECT count(*)::int AS count FROM civic.history WHERE request_id = :id", { id: clientOperationId }, tx));
-		expect(history[0]?.count).toBe(1);
+		try {
+			const first = await request(app).post(`/api/civic/public/${slugA}/requests`).send(report);
+			const retry = await request(app).post(`/api/civic/public/${slugA}/requests`).send(report);
+			expect(first.status).toBe(201);
+			expect(retry.status).toBe(201);
+			expect(retry.body.reference).toBe(first.body.reference);
+			const conflictingRetry = await request(app).post(`/api/civic/public/${slugA}/requests`)
+				.send({ ...report, description: "Different report" });
+			expect(conflictingRetry.status).toBe(409);
+			const history = await database.tenantTransaction(tenantA, tx =>
+				database.rows<{ count: number }>("SELECT count(*)::int AS count FROM civic.history WHERE request_id = :id", { id: clientOperationId }, tx));
+			expect(history[0]?.count).toBe(1);
+		} finally {
+			await owner.transaction(async transaction => {
+				const replacements = { tenant: tenantA, id: clientOperationId };
+				await owner.query("DELETE FROM civic.history WHERE tenant_id = :tenant AND request_id = :id", { replacements, transaction });
+				await owner.query("DELETE FROM civic.records WHERE tenant_id = :tenant AND id = :id", { replacements, transaction });
+			});
+		}
 	});
 	it("rejects invalid category, coordinates, contact and image payloads", async () => {
 		const base = { category: "Pothole", description: "Damage", location: "Library", anonymous: true };
