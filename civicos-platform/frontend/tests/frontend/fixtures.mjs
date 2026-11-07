@@ -21,6 +21,9 @@ export const test = base.extend({
     handle('GET', `/api/civic/public/${portal.slug}`, () => ({ json: portal }));
     handle('GET', `/api/civic/public/${portal.slug}/content`, () => ({ json: [] }));
     handle('GET', `/api/civic/public/${portal.slug}/requests/calendar`, () => ({ json: [] }));
+    handle('GET', `/api/civic/public/${portal.slug}/map`, () => ({
+      json: { type: 'FeatureCollection', features: [] },
+    }));
     await context.route('**/api/civic/**', async route => {
       const request = route.request();
       const key = `${request.method()} ${new URL(request.url()).pathname}`;
