@@ -30,7 +30,7 @@ test('resident submits a report through the mocked API', async ({ page, mockApi 
   await expect(page.getByRole('region', { name: 'Saved public reports' }).getByText(reference, { exact: true })).toBeVisible();
 });
 
-test('refresh status stays distinct from the offline notice and preserves a report draft', async ({ page }) => {
+test('refresh status stays distinct from the offline notice and preserves a report draft', async ({ page, mockApi }) => {
   await page.goto(`/portal/${portal.slug}`);
   await expect(page.getByRole('status').filter({ hasText: 'Public information is saved' })).toBeVisible();
   await page.getByRole('navigation', { name: 'Portal sections' }).getByRole('button', { name: 'Report a problem', exact: true }).click();
@@ -39,6 +39,22 @@ test('refresh status stays distinct from the offline notice and preserves a repo
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Portal refreshed.' })).toHaveText('Portal refreshed.');
   await expect(page.getByRole('status').filter({ hasText: 'Public information is saved' })).toBeVisible();
+  await expect(page.getByLabel('What happened?', { exact: true })).toHaveValue('Unfinished resident report');
+  await expect(page.getByLabel('Location', { exact: true })).toHaveValue('Library entrance');
+  mockApi.handle('GET', `/api/civic/public/${portal.slug}/content`, () => ({
+    status: 503, json: { message: 'Refresh temporarily unavailable' },
+  }));
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  const refreshError = page.getByRole('alert').filter({ hasText: 'Refresh temporarily unavailable' });
+  await expect(refreshError).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Portal refreshed.' })).toHaveCount(0);
+  await expect(page.getByLabel('What happened?', { exact: true })).toHaveValue('Unfinished resident report');
+  await expect(page.getByLabel('Location', { exact: true })).toHaveValue('Library entrance');
+  await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+  mockApi.handle('GET', `/api/civic/public/${portal.slug}/content`, () => ({ json: [] }));
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Portal refreshed.' })).toHaveText('Portal refreshed.');
+  await expect(refreshError).toHaveCount(0);
   await expect(page.getByLabel('What happened?', { exact: true })).toHaveValue('Unfinished resident report');
   await expect(page.getByLabel('Location', { exact: true })).toHaveValue('Library entrance');
 });

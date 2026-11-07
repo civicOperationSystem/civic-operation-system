@@ -196,7 +196,7 @@ Domain registration and TLS certificate issuance are deployment responsibilities
 - Organization name, logo, branding, timezone, locale, locations, departments, services, categories, users and configurable roles.
 - Supabase one-time email sign-in for staff and field workers, with verified identities linked to organization-scoped CivicOS memberships.
 - Account-free published services, announcements, events, projects, facilities, HTTPS document links, emergency notices and contact information.
-- Public portal Refresh reloads community information, public requests and the community map without clearing an unfinished report or changing the selected tab.
+- Public portal Refresh reloads community information, public requests and the community map without clearing an unfinished report or changing the selected tab. Failed refreshes show an error while keeping the current information and report draft visible; retrying successfully clears the error.
 - Resident requests with descriptions, locations, coordinates, up to three optional PNG/JPEG/WebP photos (2 MiB each), contact details, and organization-controlled anonymous reporting. Field workers can add up to three photos (5 MiB each). Resident photos are public after review; field photos appear publicly only while the request is in the `verified` state.
 - Existing deployments must run the schema migration in [Updating an existing deployment](#updating-an-existing-deployment) before deploying the six-photo limit; otherwise the previous three-photo database constraint remains in effect.
 - Archiving removes a request permanently from staff and field workspaces while retaining its public ticket, map marker, and status history.

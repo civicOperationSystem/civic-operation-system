@@ -68,6 +68,10 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       document.documentElement.lang = org.settings.language;
       document.title = `${org.name} | CivicOS`;
     } catch (failure) {
+      if (refresh) {
+        setError(failure instanceof Error ? failure.message : 'Could not refresh portal');
+        return;
+      }
       try {
         const cached = nextSlug ? await readPortalCache(nextSlug) : await readPortalCacheForDomain(window.location.hostname);
         if (cached) {
