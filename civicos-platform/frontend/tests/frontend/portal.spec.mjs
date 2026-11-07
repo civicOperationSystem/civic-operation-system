@@ -58,3 +58,25 @@ test('refresh status stays distinct from the offline notice and preserves a repo
   await expect(page.getByLabel('What happened?', { exact: true })).toHaveValue('Unfinished resident report');
   await expect(page.getByLabel('Location', { exact: true })).toHaveValue('Library entrance');
 });
+
+test('public reports stay queued offline and submit once after reconnection', async ({ page, context, mockApi }) => {
+  let submissions = 0;
+  mockApi.handle('POST', `/api/civic/public/${portal.slug}/requests`, () => {
+    submissions++;
+    return { status: 201, json: { reference: 'AAAA-BBBB-CCCC-DDDD-EEEE-FFFF-0000-2222' } };
+  });
+  await page.goto(`/portal/${portal.slug}`);
+  await expect(page.getByRole('status').filter({ hasText: 'Public information is saved' })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Portal sections' }).getByRole('button', { name: 'Report a problem', exact: true }).click();
+  await context.setOffline(true);
+  await page.getByLabel('Category').selectOption('Pothole');
+  await page.getByLabel('What happened?', { exact: true }).fill('Report saved while offline');
+  await page.getByLabel('Location', { exact: true }).fill('Community garden');
+  await page.getByRole('button', { name: 'Submit request', exact: true }).click();
+  const savedReports = page.getByRole('region', { name: 'Saved public reports' });
+  await expect(savedReports.getByText(/Waiting to send/)).toBeVisible();
+  expect(submissions).toBe(0);
+  await context.setOffline(false);
+  await expect(savedReports.getByText(/Submitted · Tracking reference/)).toBeVisible();
+  expect(submissions).toBe(1);
+});

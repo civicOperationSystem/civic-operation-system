@@ -170,7 +170,7 @@ test('public portal opens offline and submits a queued report once reconnected',
   await page.getByLabel('What happened?').fill('Report saved while offline');
   await page.getByLabel('Location').fill('Community garden');
   await page.getByRole('button', { name: 'Submit request' }).click();
-  await expect(page.getByText(/Waiting for internet/)).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Saved public reports' }).getByText(/Waiting to send/)).toBeVisible();
   await context.setOffline(false);
   await expect(page.getByText(/Submitted · Tracking reference/)).toBeVisible({ timeout: 60000 });
 });
