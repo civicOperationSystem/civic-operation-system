@@ -238,7 +238,7 @@ test('residents refresh published information without losing a report draft and 
   });
   expect(created.status()).toBe(201);
   await refresh.click();
-  await expect(page.getByRole('status')).toHaveText('Portal refreshed.');
+  await expect(page.getByRole('status').filter({ hasText: 'Portal refreshed.' })).toHaveText('Portal refreshed.');
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Public requests', exact: true }).click();
   await expect(page.getByRole('grid').getByRole('button', { name: `${title} (announcement)` })).toBeVisible();
@@ -257,7 +257,7 @@ test('residents refresh published information without losing a report draft and 
   await expect(refresh).toBeEnabled();
   await page.unroute(contentUrl);
   await refresh.click();
-  await expect(page.getByRole('status')).toHaveText('Portal refreshed.');
+  await expect(page.getByRole('status').filter({ hasText: 'Portal refreshed.' })).toHaveText('Portal refreshed.');
   await expect(refreshError).toHaveCount(0);
   await expect(page.getByLabel('What happened?', { exact: true })).toHaveValue('Unfinished resident report');
   await expect(page.getByLabel('Location', { exact: true })).toHaveValue('Library entrance');

@@ -29,3 +29,16 @@ test('resident submits a report through the mocked API', async ({ page, mockApi 
   await page.reload();
   await expect(page.getByRole('region', { name: 'Saved public reports' }).getByText(reference, { exact: true })).toBeVisible();
 });
+
+test('refresh status stays distinct from the offline notice and preserves a report draft', async ({ page }) => {
+  await page.goto(`/portal/${portal.slug}`);
+  await expect(page.getByRole('status').filter({ hasText: 'Public information is saved' })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Portal sections' }).getByRole('button', { name: 'Report a problem', exact: true }).click();
+  await page.getByLabel('What happened?', { exact: true }).fill('Unfinished resident report');
+  await page.getByLabel('Location', { exact: true }).fill('Library entrance');
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Portal refreshed.' })).toHaveText('Portal refreshed.');
+  await expect(page.getByRole('status').filter({ hasText: 'Public information is saved' })).toBeVisible();
+  await expect(page.getByLabel('What happened?', { exact: true })).toHaveValue('Unfinished resident report');
+  await expect(page.getByLabel('Location', { exact: true })).toHaveValue('Library entrance');
+});
