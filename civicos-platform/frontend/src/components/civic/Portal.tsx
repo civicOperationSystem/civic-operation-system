@@ -1,6 +1,7 @@
 'use client';
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { civicApi, CivicApiError, CivicRecord, Portal as PortalData, displayDate, readPublicPhoto } from '@/lib/civic';
 import {
   queuePublicReport, readOrganizationDirectory, readPortalCache, readPortalCacheForDomain, saveOrganizationDirectory,
@@ -8,17 +9,20 @@ import {
   type PublicReport, type PublicRequestDetail,
 } from '@/lib/portal-offline';
 import MapEmbed from './MapEmbed';
+import { groupPortalContent, portalContentKinds, searchOrganizations } from './portal-view-model';
+import usePublicReportSync from './usePublicReportSync';
 import styles from './civic.module.css';
 
-const kinds = ['all', 'service', 'announcement', 'event', 'project', 'facility', 'document', 'emergency', 'infrastructure'];
 const calendarMonths = Array.from({ length: 12 }, (_, month) => month);
 export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
+  const router = useRouter();
   const [slug, setSlug] = useState(initialSlug);
   const [organizations, setOrganizations] = useState<{ name: string; slug: string }[]>([]);
   const [organizationsLoading, setOrganizationsLoading] = useState(true);
   const [organizationsError, setOrganizationsError] = useState('');
   const [organizationSearch, setOrganizationSearch] = useState('');
   const [organizationQuery, setOrganizationQuery] = useState('');
+  const [mapOrganizationSearch, setMapOrganizationSearch] = useState('');
   const [portal, setPortal] = useState<PortalData | null>(null);
   const [content, setContent] = useState<CivicRecord[]>([]);
   const [calendarRequests, setCalendarRequests] = useState<PublicCalendarRequest[]>([]);
@@ -40,7 +44,6 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [offlineSavedAt, setOfflineSavedAt] = useState('');
   const [pendingReports, setPendingReports] = useState<PendingPublicReport[]>([]);
   const [offlineShellError, setOfflineShellError] = useState('');
-  const syncingReports = useRef(false);
   async function load(nextSlug?: string, refresh = false) {
     setError(''); setRefreshNotice(''); setBusy(true);
     try {
@@ -114,7 +117,11 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       });
     return () => { active = false; };
   }, []);
-  useEffect(() => { void load(initialSlug || new URLSearchParams(window.location.search).get('org') || undefined); }, [initialSlug]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') === 'map') setView('map');
+    void load(initialSlug || params.get('org') || undefined);
+  }, [initialSlug]);
   useEffect(() => {
     const abort = new AbortController();
     void civicApi<{ name: string; slug: string }[]>('/public/organizations/list', { signal: abort.signal })
@@ -138,45 +145,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       .finally(() => { if (!abort.signal.aborted) setOrganizationsLoading(false); });
     return () => abort.abort();
   }, []);
-  const syncReports = useCallback(async () => {
-      const activeSlug = portal?.slug;
-      if (!activeSlug || !navigator.onLine || syncingReports.current) return;
-      syncingReports.current = true;
-      try {
-        const cached = await readPortalCache(activeSlug);
-        for (const pending of cached?.reports.filter(item => !item.reference && !item.error) || []) {
-          if (!navigator.onLine) break;
-          if (!pending.report) continue;
-          try {
-            const response = await civicApi<{ reference: string }>(`/public/${activeSlug}/requests`, {
-              method: 'POST', body: { ...pending.report, client_operation_id: pending.id },
-            });
-            await updatePublicReport(activeSlug, pending.id, current => ({
-              ...current, reference: response.reference, report: undefined, error: undefined,
-            }));
-          } catch (failure) {
-            const message = failure instanceof Error ? failure.message : 'Could not submit saved request';
-            if (!navigator.onLine || failure instanceof TypeError ||
-              failure instanceof CivicApiError && (failure.status === 429 || failure.status >= 500)) break;
-            await updatePublicReport(activeSlug, pending.id, current => ({ ...current, error: message }));
-          }
-        }
-        const updated = await readPortalCache(activeSlug);
-        if (updated) {
-          setPendingReports(updated.reports);
-          const latest = [...updated.reports].reverse().find(item => item.reference);
-          if (latest?.reference) setSubmitted(latest.reference);
-        }
-      } catch (failure) {
-        setError(failure instanceof Error ? failure.message : 'Could not synchronize saved reports');
-      } finally { syncingReports.current = false; }
-  }, [portal?.slug]);
-  useEffect(() => { if (online) void syncReports(); }, [online, syncReports]);
-  useEffect(() => {
-    if (!online) return;
-    const timer = window.setInterval(() => { void syncReports(); }, 30000);
-    return () => window.clearInterval(timer);
-  }, [online, syncReports]);
+  const syncReports = usePublicReportSync(portal?.slug, online, setPendingReports, setSubmitted, setError);
   async function report(event: FormEvent<HTMLFormElement>) {
       event.preventDefault(); setError(''); setBusy(true);
     const form = event.currentTarget;
@@ -248,19 +217,11 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   const settings = portal?.settings;
-  const hubGroups = content.filter(item => kind === 'all' || item.kind === kind).reduce<{ key: string; label: string; items: CivicRecord[] }[]>((groups, item) => {
-    const date = new Date(item.created_at);
-    const key = new Intl.DateTimeFormat('en-CA', { timeZone: settings?.timezone, year: 'numeric', month: '2-digit' }).format(date);
-    let group = groups.find(current => current.key === key);
-    if (!group) {
-      group = { key, label: new Intl.DateTimeFormat(settings?.language, { timeZone: settings?.timezone, year: 'numeric', month: 'long' }).format(date), items: [] };
-      groups.push(group);
-    }
-    group.items.push(item);
-    return groups;
-  }, []);
-  const visibleOrganizations = organizations.filter(organization =>
-    `${organization.name} /portal/${organization.slug}`.toLowerCase().includes(organizationQuery.trim().toLowerCase()));
+  const hubGroups = groupPortalContent(content, kind, settings?.timezone, settings?.language);
+  const visibleOrganizations = searchOrganizations(organizations, organizationQuery);
+  const visibleMapOrganizations = searchOrganizations(organizations, mapOrganizationSearch);
+  const selectedMapOrganization = organizations.find(organization =>
+    organization.name === mapOrganizationSearch || organization.slug === mapOrganizationSearch);
   return <main className={styles.shell} style={{ '--civic-accent': settings?.color || '#0d9488' } as React.CSSProperties}>
     <header className={styles.header}>
       <Link href="/" className={styles.brand}>C<span>O</span> <strong>CivicOS</strong></Link>
@@ -326,7 +287,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         {content.filter(item => item.kind === 'emergency').map(item => <aside key={item.id} className={styles.emergency}><strong>Emergency notice · {item.title}</strong><p>{item.description}</p></aside>)}
         {view === 'overview' && <>
           <div className={styles.sectionTitle}><div><p className={styles.eyebrow}>WHAT'S HAPPENING</p><h2>Your community hub</h2></div>
-            <label>Show<select value={kind} onChange={event => setKind(event.target.value)}>{kinds.map(type => <option key={type} value={type}>{type === 'all' ? 'All information' : type}</option>)}</select></label></div>
+              <label>Show<select value={kind} onChange={event => setKind(event.target.value)}>{portalContentKinds.map(type => <option key={type} value={type}>{type === 'all' ? 'All information' : type}</option>)}</select></label></div>
           <div className={styles.hubGroups}>{hubGroups.map(group => <section key={group.key}><h3>{group.label}</h3><div className={styles.cards}>{group.items.map(item => <div className={styles.hubItem} key={item.id}>
             <button type="button" className={styles.card} onClick={() => setPublicContentDetail(item)}>
               <span className={styles.tag}>{item.kind}</span><h3>{item.title}</h3><p>{item.description}</p>
@@ -342,6 +303,15 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             <div className={styles.inline}>{settings?.services.map(service => <span className={styles.tag} key={service}>{service}</span>)}</div></section>
         </>}
         {view === 'map' && <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>EXPLORE YOUR COMMUNITY</p><h2>Places, infrastructure & public work</h2></div></div>
+          <div className={styles.inline} role="search" aria-label="Find another community">
+            <label>Go to a community<input type="search" list="map-organization-suggestions" autoComplete="off" value={mapOrganizationSearch} onChange={event => setMapOrganizationSearch(event.target.value)} placeholder="Start typing an organization name" /></label>
+            <datalist id="map-organization-suggestions">
+              {visibleMapOrganizations.map(organization => <option key={organization.slug} value={organization.name} label={`/portal/${organization.slug}`} />)}
+            </datalist>
+            <button type="button" className={styles.secondary} disabled={!selectedMapOrganization} onClick={() => {
+              if (selectedMapOrganization) router.push(`/portal/${encodeURIComponent(selectedMapOrganization.slug)}`);
+            }}>Open community</button>
+          </div>
           {mapFocus && <div className={styles.inline} role="status"><p className={styles.hint}>Showing <strong>{mapFocus.title}</strong> on the map.</p><button type="button" className={styles.secondary} onClick={() => setMapFocus(null)}>Show the whole community</button></div>}
           <p className={styles.hint}>This map is read-only by default. Use the zoom controls to inspect an area, or enable interaction to browse public locations and open a request.</p>{online ? <MapEmbed portal={portal} revision={revision} locked center={mapFocus?.point} marker={mapFocus?.point} zoom={mapFocus ? 16 : undefined} onSelect={id => void selectPublicRequest(id)} /> : <p className={styles.hint}>The interactive map needs an internet connection. Saved portal information remains available in the Community hub and Public requests sections.</p>}
           {error && <p role="alert" className={styles.error}>{error}</p>}

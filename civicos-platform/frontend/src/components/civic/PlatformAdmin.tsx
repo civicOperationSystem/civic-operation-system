@@ -261,7 +261,8 @@ export default function PlatformAdmin() {
                 <button className={styles.secondary} disabled={busy} onClick={() => setReassignment({ organization, administrator })}>Reassign</button>
               </li>)}</ul>
               {!organization.archived_at && <><Link href={`/staff?org=${encodeURIComponent(organization.slug)}`}>Open staff sign-in</Link>
-              <Link href={`/portal/${encodeURIComponent(organization.slug)}`}>Open public portal</Link></>}
+              <Link href={`/portal/${encodeURIComponent(organization.slug)}`}>Open public portal</Link>
+              <Link href={`/portal/${encodeURIComponent(organization.slug)}?view=map`}>Open community map</Link></>}
               <div className={styles.inline}>
                 <button className={styles.secondary} disabled={busy} onClick={() => void setOrganizationArchived(organization, !organization.archived_at)}>
                   {organization.archived_at ? 'Restore organization' : 'Archive organization'}

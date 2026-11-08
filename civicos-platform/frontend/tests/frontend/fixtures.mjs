@@ -10,18 +10,29 @@ export const portal = {
     states: [{ key: 'submitted', label: 'Submitted', next: [] }],
   },
 };
+export const otherPortal = {
+  ...portal, id: 'riverside-community', name: 'Riverside Community', slug: 'riverside-community',
+};
 
 export const test = base.extend({
   mockApi: [async ({ context }, use) => {
     const handlers = new Map();
     const unexpected = [];
     const handle = (method, path, handler) => handlers.set(`${method} ${path}`, handler);
-    handle('GET', '/api/civic/public/organizations/list', () => ({ json: [{ name: portal.name, slug: portal.slug }] }));
+    handle('GET', '/api/civic/public/organizations/list', () => ({
+      json: [portal, otherPortal].map(({ name, slug }) => ({ name, slug })),
+    }));
     handle('GET', '/api/civic/public/portal', () => ({ status: 404, json: { message: 'No portal is configured for this domain' } }));
     handle('GET', `/api/civic/public/${portal.slug}`, () => ({ json: portal }));
     handle('GET', `/api/civic/public/${portal.slug}/content`, () => ({ json: [] }));
     handle('GET', `/api/civic/public/${portal.slug}/requests/calendar`, () => ({ json: [] }));
     handle('GET', `/api/civic/public/${portal.slug}/map`, () => ({
+      json: { type: 'FeatureCollection', features: [] },
+    }));
+    handle('GET', `/api/civic/public/${otherPortal.slug}`, () => ({ json: otherPortal }));
+    handle('GET', `/api/civic/public/${otherPortal.slug}/content`, () => ({ json: [] }));
+    handle('GET', `/api/civic/public/${otherPortal.slug}/requests/calendar`, () => ({ json: [] }));
+    handle('GET', `/api/civic/public/${otherPortal.slug}/map`, () => ({
       json: { type: 'FeatureCollection', features: [] },
     }));
     await context.route('**/api/civic/**', async route => {

@@ -7,6 +7,22 @@ test('platform owner creates an organization with mocked authentication and pers
   mockApi.handle('POST', '/api/civic/platform/login', () => ({ json: { token: 'frontend-platform-token' } }));
   const organizations = [];
   mockApi.handle('GET', '/api/civic/platform/organizations', () => ({ json: organizations }));
+  mockApi.handle('GET', '/api/civic/public/new-test-town', () => ({
+    json: {
+      id: 'new-town', name: 'New Test Town', slug: 'new-test-town', domain: null,
+      settings: {
+        logo: '', color: '#0d9488', timezone: 'UTC', language: 'en', contact: '',
+        locations: [], departments: [], services: [], categories: ['Pothole'],
+        anonymous: true, center: [0, 0], zoom: 12,
+        states: [{ key: 'submitted', label: 'Submitted', next: [] }],
+      },
+    },
+  }));
+  mockApi.handle('GET', '/api/civic/public/new-test-town/content', () => ({ json: [] }));
+  mockApi.handle('GET', '/api/civic/public/new-test-town/requests/calendar', () => ({ json: [] }));
+  mockApi.handle('GET', '/api/civic/public/new-test-town/map', () => ({
+    json: { type: 'FeatureCollection', features: [] },
+  }));
   mockApi.handle('POST', '/api/civic/platform/organizations', request => {
     const data = request.postDataJSON();
     const organization = { ...data, id: 'new-town', domain: data.domain || null, archived_at: null, admins: [] };
@@ -21,6 +37,9 @@ test('platform owner creates an organization with mocked authentication and pers
   await page.getByRole('button', { name: 'Create organization', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('Organization created.');
   await expect(page.getByRole('heading', { name: 'New Test Town', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open community map' })).toHaveAttribute('href', '/portal/new-test-town?view=map');
+  await page.getByRole('link', { name: 'Open community map' }).click();
+  await expect(page.getByRole('heading', { name: 'Places, infrastructure & public work' })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('heading', { name: 'New Test Town', exact: true })).toBeVisible();
   expect(organizations).toHaveLength(1);

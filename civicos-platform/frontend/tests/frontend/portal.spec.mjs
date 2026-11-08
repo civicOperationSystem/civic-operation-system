@@ -12,6 +12,17 @@ test('directory search opens the selected public portal', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Staff sign in' })).toHaveAttribute('href', `/staff?org=${portal.slug}`);
 });
 
+test('map organization autocomplete opens the selected community', async ({ page }) => {
+  await page.goto(`/portal/${portal.slug}`);
+  await page.getByRole('navigation', { name: 'Portal sections' }).getByRole('button', { name: 'Explore the map', exact: true }).click();
+  const search = page.getByRole('combobox', { name: 'Go to a community' });
+  await search.fill('Riverside');
+  await expect(page.locator('#map-organization-suggestions option')).toHaveCount(1);
+  await search.fill('Riverside Community');
+  await page.getByRole('button', { name: 'Open community' }).click();
+  await expect(page.getByRole('heading', { name: 'Riverside Community', exact: true })).toBeVisible();
+});
+
 test('resident submits a report through the mocked API', async ({ page, mockApi }) => {
   let submitted;
   const reference = 'AAAA-BBBB-CCCC-DDDD-EEEE-FFFF-0000-1111';
