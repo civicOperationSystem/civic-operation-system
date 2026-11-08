@@ -5,6 +5,11 @@ export type MapFeature = {
 };
 export type MapCollection = { type: 'FeatureCollection'; features: MapFeature[]; truncated?: boolean };
 export type MapContext = { slug: string; center: [number, number]; zoom?: number | null; marker?: [number, number] | null; token: string | null; selectable: boolean; viewSelectable?: boolean; focused?: boolean; locked?: boolean };
+export type MapOrganization = { name: string; slug: string };
+export function searchMapOrganizations(organizations: MapOrganization[], query: string): MapOrganization[] {
+  const search = query.trim().toLowerCase();
+  return organizations.filter(organization => `${organization.name} ${organization.slug}`.toLowerCase().includes(search));
+}
 function isPoint(value: unknown): value is [number, number] {
   return Array.isArray(value) && value.length === 2 &&
     value.every(point => typeof point === 'number' && Number.isFinite(point)) &&

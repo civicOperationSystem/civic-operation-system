@@ -1,8 +1,7 @@
 'use client';
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { civicApi, CivicApiError, CivicRecord, Portal as PortalData, displayDate, readPublicPhoto } from '@/lib/civic';
+import { civicApi, CivicApiError, CivicRecord, Portal as PortalData, communityMapUrl, displayDate, readPublicPhoto } from '@/lib/civic';
 import {
   queuePublicReport, readOrganizationDirectory, readPortalCache, readPortalCacheForDomain, saveOrganizationDirectory,
   savePortalSnapshot, savePublicRequestDetail, updatePublicReport, type PendingPublicReport, type PublicCalendarRequest,
@@ -15,14 +14,12 @@ import styles from './civic.module.css';
 
 const calendarMonths = Array.from({ length: 12 }, (_, month) => month);
 export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
-  const router = useRouter();
   const [slug, setSlug] = useState(initialSlug);
   const [organizations, setOrganizations] = useState<{ name: string; slug: string }[]>([]);
   const [organizationsLoading, setOrganizationsLoading] = useState(true);
   const [organizationsError, setOrganizationsError] = useState('');
   const [organizationSearch, setOrganizationSearch] = useState('');
   const [organizationQuery, setOrganizationQuery] = useState('');
-  const [mapOrganizationSearch, setMapOrganizationSearch] = useState('');
   const [portal, setPortal] = useState<PortalData | null>(null);
   const [content, setContent] = useState<CivicRecord[]>([]);
   const [calendarRequests, setCalendarRequests] = useState<PublicCalendarRequest[]>([]);
@@ -119,7 +116,6 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   }, []);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('view') === 'map') setView('map');
     void load(initialSlug || params.get('org') || undefined);
   }, [initialSlug]);
   useEffect(() => {
@@ -219,9 +215,6 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const settings = portal?.settings;
   const hubGroups = groupPortalContent(content, kind, settings?.timezone, settings?.language);
   const visibleOrganizations = searchOrganizations(organizations, organizationQuery);
-  const visibleMapOrganizations = searchOrganizations(organizations, mapOrganizationSearch);
-  const selectedMapOrganization = organizations.find(organization =>
-    organization.name === mapOrganizationSearch || organization.slug === mapOrganizationSearch);
   return <main className={styles.shell} style={{ '--civic-accent': settings?.color || '#0d9488' } as React.CSSProperties}>
     <header className={styles.header}>
       <Link href="/" className={styles.brand}>C<span>O</span> <strong>CivicOS</strong></Link>
@@ -303,15 +296,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             <div className={styles.inline}>{settings?.services.map(service => <span className={styles.tag} key={service}>{service}</span>)}</div></section>
         </>}
         {view === 'map' && <><div className={styles.sectionTitle}><div><p className={styles.eyebrow}>EXPLORE YOUR COMMUNITY</p><h2>Places, infrastructure & public work</h2></div></div>
-          <div className={styles.inline} role="search" aria-label="Find another community">
-            <label>Go to a community<input type="search" list="map-organization-suggestions" autoComplete="off" value={mapOrganizationSearch} onChange={event => setMapOrganizationSearch(event.target.value)} placeholder="Start typing an organization name" /></label>
-            <datalist id="map-organization-suggestions">
-              {visibleMapOrganizations.map(organization => <option key={organization.slug} value={organization.name} label={`/portal/${organization.slug}`} />)}
-            </datalist>
-            <button type="button" className={styles.secondary} disabled={!selectedMapOrganization} onClick={() => {
-              if (selectedMapOrganization) router.push(`/portal/${encodeURIComponent(selectedMapOrganization.slug)}`);
-            }}>Open community</button>
-          </div>
+          <p className={styles.hint}><a href={communityMapUrl(portal.slug)} target="_blank" rel="noopener noreferrer">Open the standalone community map</a></p>
           {mapFocus && <div className={styles.inline} role="status"><p className={styles.hint}>Showing <strong>{mapFocus.title}</strong> on the map.</p><button type="button" className={styles.secondary} onClick={() => setMapFocus(null)}>Show the whole community</button></div>}
           <p className={styles.hint}>This map is read-only by default. Use the zoom controls to inspect an area, or enable interaction to browse public locations and open a request.</p>{online ? <MapEmbed portal={portal} revision={revision} locked center={mapFocus?.point} marker={mapFocus?.point} zoom={mapFocus ? 16 : undefined} onSelect={id => void selectPublicRequest(id)} /> : <p className={styles.hint}>The interactive map needs an internet connection. Saved portal information remains available in the Community hub and Public requests sections.</p>}
           {error && <p role="alert" className={styles.error}>{error}</p>}

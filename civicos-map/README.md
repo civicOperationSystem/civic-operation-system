@@ -4,6 +4,7 @@ MapLibre and OpenFreeMap display authorized service requests, facilities and inf
 
 - `/` and `/civic` open the community map.
 - `?org={slug}` selects a public organization when opening the map directly.
+- On the standalone map domain, type an organization name or slug into the organization picker and open its public map. The selected organization remains in the `?org=` URL.
 - The platform supplies authenticated staff context through an origin-checked iframe message channel.
 - Requests remain private unless explicitly published by authorized staff.
 - Clustering, layer/status filters, search, fit-to-locations, geolocation and resident pin selection are supported.

@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { Session as SupabaseSession } from '@supabase/supabase-js';
-import { civicApi } from '@/lib/civic';
+import { civicApi, communityMapUrl } from '@/lib/civic';
 import { getCivicSupabase, isCivicSupabaseConfigured } from '@/lib/supabase';
 import styles from './civic.module.css';
 
@@ -262,7 +262,7 @@ export default function PlatformAdmin() {
               </li>)}</ul>
               {!organization.archived_at && <><Link href={`/staff?org=${encodeURIComponent(organization.slug)}`}>Open staff sign-in</Link>
               <Link href={`/portal/${encodeURIComponent(organization.slug)}`}>Open public portal</Link>
-              <Link href={`/portal/${encodeURIComponent(organization.slug)}?view=map`}>Open community map</Link></>}
+              <a href={communityMapUrl(organization.slug)}>Open community map</a></>}
               <div className={styles.inline}>
                 <button className={styles.secondary} disabled={busy} onClick={() => void setOrganizationArchived(organization, !organization.archived_at)}>
                   {organization.archived_at ? 'Restore organization' : 'Archive organization'}

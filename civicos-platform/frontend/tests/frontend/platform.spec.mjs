@@ -37,9 +37,12 @@ test('platform owner creates an organization with mocked authentication and pers
   await page.getByRole('button', { name: 'Create organization', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('Organization created.');
   await expect(page.getByRole('heading', { name: 'New Test Town', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open community map' })).toHaveAttribute('href', '/portal/new-test-town?view=map');
+  await expect(page.getByRole('link', { name: 'Open community map' })).toHaveAttribute(
+    'href', 'http://127.0.0.1:3311/civic?org=new-test-town',
+  );
   await page.getByRole('link', { name: 'Open community map' }).click();
-  await expect(page.getByRole('heading', { name: 'Places, infrastructure & public work' })).toBeVisible();
+  await expect(page).toHaveURL(/127\.0\.0\.1:3311\/civic\?org=new-test-town$/);
+  await expect(page.getByRole('searchbox', { name: 'Organization' })).toHaveValue('New Test Town');
   await page.reload();
   await expect(page.getByRole('heading', { name: 'New Test Town', exact: true })).toBeVisible();
   expect(organizations).toHaveLength(1);

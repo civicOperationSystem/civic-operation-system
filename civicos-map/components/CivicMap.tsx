@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { GeoJSONSource, GeolocateControl as GeolocateControlInstance, Map as MapInstance, Marker as MapMarker } from 'maplibre-gl';
-import { filterFeatures, isMapContext, MapCollection, MapContext, MapFeature } from '@/lib/civic-map';
+import { filterFeatures, isMapContext, MapCollection, MapContext, MapFeature, MapOrganization, searchMapOrganizations } from '@/lib/civic-map';
 import styles from '@/app/civic/map.module.css';
 
 const empty: MapCollection = { type: 'FeatureCollection', features: [] };
@@ -17,6 +17,11 @@ export default function CivicMap() {
   const parentOrigin = useRef<string | null>(null);
   const [slug, setSlug] = useState('');
   const [standaloneSlug, setStandaloneSlug] = useState('');
+  const [standalone, setStandalone] = useState(false);
+  const [organizations, setOrganizations] = useState<MapOrganization[]>([]);
+  const [organizationSearch, setOrganizationSearch] = useState('');
+  const [organizationsLoading, setOrganizationsLoading] = useState(false);
+  const [organizationsError, setOrganizationsError] = useState('');
   const [data, setData] = useState<MapCollection>(empty);
   const [kind, setKind] = useState('all');
   const [status, setStatus] = useState('');
@@ -27,6 +32,12 @@ export default function CivicMap() {
   const [selectedPoint, setSelectedPoint] = useState<[number, number] | null>(null);
   const [revision, setRevision] = useState(0);
   const filtered = useMemo(() => filterFeatures(data, kind, status, search), [data, kind, status, search]);
+  const matchingOrganizations = useMemo(
+    () => searchMapOrganizations(organizations, organizationSearch),
+    [organizations, organizationSearch],
+  );
+  const selectedOrganization = organizations.find(organization =>
+    organization.name === organizationSearch || organization.slug === organizationSearch);
 
   function send(message: object) {
     if (parentOrigin.current) window.parent.postMessage(message, parentOrigin.current);
@@ -55,12 +66,41 @@ export default function CivicMap() {
     for (const origin of allowed) {
       if (window.parent !== window) window.parent.postMessage({ type: 'civic-map-ready' }, origin);
     }
+    const isStandalone = window.parent === window;
+    setStandalone(isStandalone);
     const org = new URLSearchParams(window.location.search).get('org');
     if (org && /^[a-z0-9-]{3,60}$/.test(org) && window.parent === window) {
       setSlug(org); setStandaloneSlug(org);
     }
     return () => { window.removeEventListener('message', receive); contextRef.current = null; };
   }, []);
+  useEffect(() => {
+    if (!standalone) return;
+    const abort = new AbortController();
+    setOrganizationsLoading(true);
+    void fetch('/api/civic/public/organizations/list', { signal: abort.signal, cache: 'no-store' })
+      .then(async response => {
+        const items: unknown = await response.json();
+        if (!response.ok) throw new Error('Could not load organizations');
+        if (!Array.isArray(items) || items.some(item =>
+          !item || typeof item.name !== 'string' || typeof item.slug !== 'string')) {
+          throw new Error('The organization directory returned invalid data.');
+        }
+        const directory = items as MapOrganization[];
+        if (abort.signal.aborted) return;
+        setOrganizations(directory);
+        const currentSlug = new URLSearchParams(window.location.search).get('org');
+        const current = directory.find(organization => organization.slug === currentSlug);
+        if (current) setOrganizationSearch(current.name);
+      })
+      .catch(failure => {
+        if (!abort.signal.aborted) {
+          setOrganizationsError(failure instanceof Error ? failure.message : 'Could not load organizations');
+        }
+      })
+      .finally(() => { if (!abort.signal.aborted) setOrganizationsLoading(false); });
+    return () => abort.abort();
+  }, [standalone]);
   useEffect(() => {
     if (!standaloneSlug) return;
     const abort = new AbortController();
@@ -229,11 +269,32 @@ export default function CivicMap() {
       [Math.max(...points.map(point => point[0])), Math.max(...points.map(point => point[1]))],
     ], { padding: 70, maxZoom: 16 });
   }
+  function openOrganization(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedOrganization) return;
+    setSlug(selectedOrganization.slug);
+    setStandaloneSlug(selectedOrganization.slug);
+    setError('');
+    window.history.replaceState(null, '', `${window.location.pathname}?org=${encodeURIComponent(selectedOrganization.slug)}`);
+  }
   return <main className={styles.shell}>
-    {!context?.focused && !context?.locked && <header className={styles.header}><strong>CivicOS <span>Community map</span></strong><span className={styles.badge}>{context?.token ? 'Permission-aware workspace' : 'Public information only'}</span></header>}
+    {!context?.focused && !context?.locked && <header className={styles.header}><strong>CivicOS <span>{standalone && context ? organizations.find(item => item.slug === context.slug)?.name || context.slug : 'Community map'}</span></strong><span className={styles.badge}>{context?.token ? 'Permission-aware workspace' : 'Public information only'}</span></header>}
     <div className={context?.focused || context?.locked ? `${styles.layout} ${styles.focusedLayout}` : styles.layout}>
       {!context?.focused && !context?.locked && <aside className={styles.sidebar}>
-        {!context && <form onSubmit={event => { event.preventDefault(); setStandaloneSlug(slug); setRevision(value => value + 1); }}><label>Organization<input required value={slug} onChange={event => setSlug(event.target.value)} pattern="[a-z0-9-]{3,60}" /></label><button>Open map</button></form>}
+        {standalone && <form onSubmit={openOrganization}>
+          <label>Organization
+            <input required type="search" list="map-organizations" autoComplete="off" value={organizationSearch}
+              onChange={event => setOrganizationSearch(event.target.value)}
+              placeholder="Start typing a community name" />
+          </label>
+          <datalist id="map-organizations">
+            {matchingOrganizations.map(organization =>
+              <option key={organization.slug} value={organization.name} label={organization.slug} />)}
+          </datalist>
+          <button disabled={organizationsLoading || !selectedOrganization}>Open community map</button>
+          {organizationsError && <p className={styles.error} role="alert">{organizationsError}</p>}
+          {organizationsLoading && <p className={styles.hint} role="status">Loading organizations…</p>}
+        </form>}
         {context?.viewSelectable && <button disabled={!map} onClick={() => {
           if (!map) return;
           const center = map.getCenter().wrap();

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { filterFeatures, isMapContext } from '../lib/civic-map.ts';
+import { filterFeatures, isMapContext, searchMapOrganizations } from '../lib/civic-map.ts';
 
 test('map context rejects tokens in URLs and malformed coordinates or messages', () => {
   const valid = { type: 'civic-map-context', slug: 'town-a', center: [-73, 40], token: null, selectable: false };
@@ -36,4 +36,13 @@ test('map filters preserve only matching authorized features and never add data'
   assert.deepEqual(filterFeatures(data, 'all', 'Crew assigned', '').features, [features[0]]);
   assert.deepEqual(filterFeatures(data, 'all', '', 'MAIN').features, [features[1]]);
   assert.deepEqual(filterFeatures(data, 'facility', '', 'pothole').features, []);
+});
+test('organization suggestions filter by typed community name or slug', () => {
+  const organizations = [
+    { name: 'Frontend Test Town', slug: 'frontend-town' },
+    { name: 'Riverside Community', slug: 'riverside-community' },
+  ];
+  assert.deepEqual(searchMapOrganizations(organizations, 'river'), [organizations[1]]);
+  assert.deepEqual(searchMapOrganizations(organizations, 'FRONTEND-TOWN'), [organizations[0]]);
+  assert.deepEqual(searchMapOrganizations(organizations, 'missing'), []);
 });

@@ -1,5 +1,24 @@
 import { test, expect, portal } from './fixtures.mjs';
 
+test('the portal does not display the map-domain organization picker', async ({ page }) => {
+  await page.goto(`/portal/${portal.slug}`);
+  await page.getByRole('navigation', { name: 'Portal sections' }).getByRole('button', { name: 'Explore the map', exact: true }).click();
+  await expect(page.getByRole('searchbox', { name: 'Organization' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Open the standalone community map' }))
+    .toHaveAttribute('href', `http://127.0.0.1:3311/civic?org=${portal.slug}`);
+});
+
+test('standalone map autocomplete selects and opens an organization on the map domain', async ({ page }) => {
+  await page.goto('http://127.0.0.1:3311/civic');
+  const organization = page.getByRole('searchbox', { name: 'Organization' });
+  await organization.fill('river');
+  await expect(page.locator('#map-organizations option')).toHaveCount(1);
+  await organization.fill('Riverside Community');
+  await page.getByRole('button', { name: 'Open community map' }).click();
+  await expect(page).toHaveURL(/127\.0\.0\.1:3311\/civic\?org=riverside-community$/);
+  await expect(page.getByRole('status').filter({ hasText: 'authorized locations' })).toHaveText('0 authorized locations');
+});
+
 test('directory search opens the selected public portal', async ({ page }) => {
   await page.goto('/portal');
   await expect(page.getByText('No portal is configured for this domain')).toHaveCount(0);
@@ -10,17 +29,6 @@ test('directory search opens the selected public portal', async ({ page }) => {
   await page.getByRole('link', { name: `Open ${portal.name} portal` }).click();
   await expect(page.getByRole('heading', { name: portal.name, exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Staff sign in' })).toHaveAttribute('href', `/staff?org=${portal.slug}`);
-});
-
-test('map organization autocomplete opens the selected community', async ({ page }) => {
-  await page.goto(`/portal/${portal.slug}`);
-  await page.getByRole('navigation', { name: 'Portal sections' }).getByRole('button', { name: 'Explore the map', exact: true }).click();
-  const search = page.getByRole('combobox', { name: 'Go to a community' });
-  await search.fill('Riverside');
-  await expect(page.locator('#map-organization-suggestions option')).toHaveCount(1);
-  await search.fill('Riverside Community');
-  await page.getByRole('button', { name: 'Open community' }).click();
-  await expect(page.getByRole('heading', { name: 'Riverside Community', exact: true })).toBeVisible();
 });
 
 test('resident submits a report through the mocked API', async ({ page, mockApi }) => {

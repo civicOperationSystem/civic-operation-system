@@ -32,6 +32,14 @@ export class CivicApiError extends Error {
   readonly status: number;
   constructor(message: string, status: number) { super(message); this.status = status; }
 }
+export function communityMapUrl(slug: string): string {
+  const defaultMapUrl = process.env.NODE_ENV === 'production'
+    ? 'https://civicos-map.vercel.app/civic'
+    : 'http://localhost:3101/civic';
+  const url = new URL(process.env.NEXT_PUBLIC_CIVIC_MAP_URL || defaultMapUrl);
+  url.searchParams.set('org', slug);
+  return url.toString();
+}
 export async function civicApi<T>(path: string, options: { token?: string; method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
   const response = await fetch(`/api/civic${path}`, {
     method: options.method || 'GET',
