@@ -7,6 +7,7 @@ import {
   saveSubmittedPublicReport, updatePublicReport, type PendingPublicReport, type PublicCalendarRequest, type PublicReport, type PublicRequestDetail,
 } from '@/lib/portal-offline';
 import MapEmbed from './MapEmbed';
+import PortalInitialLoading from './PortalInitialLoading';
 import usePublicOrganizationDirectory from './usePublicOrganizationDirectory';
 import { groupPortalContent, portalContentKinds, searchOrganizations } from './portal-view-model';
 import usePublicReportSync from './usePublicReportSync';
@@ -15,6 +16,7 @@ import OfflineReportSecurityDialog from './OfflineReportSecurityDialog';
 import styles from './civic.module.css';
 
 const calendarMonths = Array.from({ length: 12 }, (_, month) => month);
+const initialPortalLoadTimeoutMs = 10000;
 export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [slug, setSlug] = useState(initialSlug);
   const { organizations, organizationsLoading, organizationsError, retryOrganizations } = usePublicOrganizationDirectory();
@@ -41,14 +43,14 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [offlineSnapshot, setOfflineSnapshot] = useState(false); const [offlineSavedAt, setOfflineSavedAt] = useState('');
   const [pendingReports, setPendingReports] = useState<PendingPublicReport[]>([]);
   const [offlineShellError, setOfflineShellError] = useState('');
-  async function load(nextSlug?: string, refresh = false) {
+  async function load(nextSlug?: string, refresh = false, signal?: AbortSignal) {
     setError(''); setRefreshNotice(''); setBusy(true);
     try {
-      const org = nextSlug ? await civicApi<PortalData>(`/public/${encodeURIComponent(nextSlug)}`) :
-        await civicApi<PortalData>(`/public/portal?domain=${encodeURIComponent(window.location.hostname)}`);
+      const org = nextSlug ? await civicApi<PortalData>(`/public/${encodeURIComponent(nextSlug)}`, { signal }) :
+        await civicApi<PortalData>(`/public/portal?domain=${encodeURIComponent(window.location.hostname)}`, { signal });
       const [records, requests] = await Promise.all([
-        civicApi<CivicRecord[]>(`/public/${org.slug}/content`),
-        civicApi<PublicCalendarRequest[]>(`/public/${org.slug}/requests/calendar`),
+        civicApi<CivicRecord[]>(`/public/${org.slug}/content`, { signal }),
+        civicApi<PublicCalendarRequest[]>(`/public/${org.slug}/requests/calendar`, { signal }),
       ]);
       setPortal(org); setSlug(org.slug); setContent(records); setCalendarRequests(requests);
       setOfflineSnapshot(false);
@@ -85,7 +87,9 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
           if (!refresh) setPortal(null);
           const domainHasNoPortal = !nextSlug && failure instanceof CivicApiError &&
             failure.status === 404 && failure.message === 'No portal is configured for this domain';
-          setError(domainHasNoPortal ? '' : failure instanceof Error ? failure.message : 'Could not load portal');
+          setError(domainHasNoPortal ? '' : signal?.aborted
+            ? 'Loading the community timed out. Check your connection and try again.'
+            : failure instanceof Error ? failure.message : 'Could not load portal');
         }
       } catch (cacheFailure) {
         if (!refresh) setPortal(null);
@@ -93,6 +97,17 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       }
     }
     finally { setBusy(false); }
+  }
+  function loadInitialPortal() {
+    const params = new URLSearchParams(window.location.search);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), initialPortalLoadTimeoutMs);
+    setInitialPortalLoading(true);
+    void load(initialSlug || params.get('org') || undefined, false, controller.signal)
+      .finally(() => {
+        window.clearTimeout(timeout);
+        setInitialPortalLoading(false);
+      });
   }
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -115,9 +130,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
     return () => { active = false; };
   }, []);
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    void load(initialSlug || params.get('org') || undefined)
-      .finally(() => setInitialPortalLoading(false));
+    loadInitialPortal();
   }, [initialSlug]);
   const reportSecurity = useOfflinePublicReports({ slug: portal?.slug, setPendingReports });
   const syncReports = usePublicReportSync(portal?.slug, online, setPendingReports, setSubmitted, setError);
@@ -221,11 +234,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         ? `Offline — showing saved public information${offlineSavedAt ? ` from ${displayDate(offlineSavedAt, portal.settings)}` : ''}.`
         : 'Public information is saved on this device for offline viewing.'}
     </p>}
-    {!portal && initialPortalLoading ? <section className={styles.welcome} aria-busy="true">
-      <p className={styles.eyebrow}>YOUR COMMUNITY, CONNECTED</p>
-      <h1>Loading your community…</h1>
-      <p role="status">Loading public information. This usually takes a moment.</p>
-    </section> : !portal ? <section className={styles.welcome}>
+    {!portal && initialPortalLoading ? <PortalInitialLoading /> : !portal ? <section className={styles.welcome}>
       <p className={styles.eyebrow}>ONE COMMUNITY. ONE CONNECTED PLATFORM.</p>
       <h1>Everyday services.<br />A stronger community.</h1>
       <p>Find local information, report a problem, and follow the work that matters to your community.</p>
@@ -254,7 +263,10 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
             <Link href={`/portal/${encodeURIComponent(organization.slug)}`} className={styles.secondary} aria-label={`Open ${organization.name} portal`}>Open portal</Link>
           </article>)}</div>}
       </section>}
-      {error && <p role="alert" className={styles.error}>{error}</p>}
+      {error && <>
+        <p role="alert" className={styles.error}>{error}</p>
+        <button type="button" className={styles.secondary} onClick={loadInitialPortal}>Retry loading community</button>
+      </>}
     </section> : <>
       <section className={styles.hero}>
         <div>

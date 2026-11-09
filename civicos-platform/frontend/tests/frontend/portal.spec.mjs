@@ -45,6 +45,18 @@ test('direct community navigation shows a loading state until portal data arrive
   await expect(page.getByRole('heading', { name: portal.name, exact: true })).toBeVisible();
 });
 
+test('community load failures show a retry action', async ({ page, mockApi }) => {
+  mockApi.handle('GET', `/api/civic/public/${portal.slug}`, () => ({
+    status: 503, json: { message: 'Community service temporarily unavailable' },
+  }));
+  await page.goto(`/portal/${portal.slug}`);
+  await expect(page.getByRole('alert').filter({ hasText: 'Community service temporarily unavailable' })).toBeVisible();
+
+  mockApi.handle('GET', `/api/civic/public/${portal.slug}`, () => ({ json: portal }));
+  await page.getByRole('button', { name: 'Retry loading community' }).click();
+  await expect(page.getByRole('heading', { name: portal.name, exact: true })).toBeVisible();
+});
+
 test('organization directory errors can be retried without reloading the public site', async ({ page, mockApi }) => {
   mockApi.handle('GET', '/api/civic/public/organizations/list', () => ({
     status: 503, json: { message: 'Directory temporarily unavailable' },
