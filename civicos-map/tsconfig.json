@@ -34,7 +34,8 @@
     "**/*.ts",
     "**/*.tsx",
     "**/*.d.ts",
-    ".next/types/**/*.ts"
+    ".next/types/**/*.ts",
+    ".next-csp-test/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

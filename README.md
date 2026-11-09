@@ -58,7 +58,7 @@ Stop if provisioning fails. Repeating provisioning for an existing slug preserve
 
 Visit http://localhost:3100/platform to sign in as the configured platform owner and create organizations. That owner appoints one Bottom admin for each organization; Bottom admins sign in at the organization’s staff URL and add/manage only their own staff from **People & roles**. The mobile-friendly portal and staff workspace support limited offline use; field work also supports queued offline updates.
 
-The platform uses a per-request nonce Content Security Policy. Its root layout must remain dynamically rendered so Next.js includes the matching nonce on framework and inline scripts; do not statically export or publicly cache its HTML. Run `npm run test:csp` from `civicos-platform\frontend` to build and browser-test production CSP behavior on port 3320. The suite uses a separate `.next-csp-test` output directory to avoid interfering with a running development server.
+The platform and map use a per-request nonce Content Security Policy. Both root layouts must remain dynamically rendered so Next.js includes the matching nonce on framework and inline scripts; do not statically export or publicly cache their HTML. Run `npm run test:csp` from `civicos-platform\frontend` to build and browser-test production CSP behavior on ports 3320 (platform) and 3321 (map), including the cross-origin iframe handshake. The suite uses a separate `.next-csp-test` output directory in each app to avoid interfering with running development servers. Deploy both Vercel projects when changing their respective layouts; deploying the platform alone does not update the map.
 
 ### Supabase email sign-in
 
