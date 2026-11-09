@@ -10,7 +10,7 @@ test('the portal does not display the map-domain organization picker', async ({ 
 
 test('standalone map autocomplete selects and opens an organization on the map domain', async ({ page }) => {
   await page.goto('http://127.0.0.1:3311/civic');
-  const organization = page.getByRole('searchbox', { name: 'Organization' });
+  const organization = page.getByLabel('Organization');
   await organization.fill('river');
   await expect(page.locator('#map-organizations option')).toHaveCount(1);
   await organization.fill('Riverside Community');
@@ -92,8 +92,29 @@ test('public reports stay queued offline and submit once after reconnection', as
   await page.getByLabel('What happened?', { exact: true }).fill('Report saved while offline');
   await page.getByLabel('Location', { exact: true }).fill('Community garden');
   await page.getByRole('button', { name: 'Submit request', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Protect this offline report' })).toBeVisible();
+  await page.getByLabel('Offline passphrase', { exact: true }).fill('CivicOS-offline-report-test-passphrase');
+  await page.getByLabel('Confirm offline passphrase', { exact: true }).fill('CivicOS-offline-report-test-passphrase');
+  await page.getByRole('button', { name: 'Set passphrase and encrypt report' }).click();
   const savedReports = page.getByRole('region', { name: 'Saved public reports' });
   await expect(savedReports.getByText(/Waiting to send/)).toBeVisible();
+  const storedReport = await page.evaluate(async slug => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('civicos-offline-v1');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const cache = await new Promise((resolve, reject) => {
+      const request = db.transaction('portals').objectStore('portals').get(slug);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return cache.reports[0].report;
+  }, portal.slug);
+  expect(storedReport).toMatchObject({ version: 1 });
+  expect(JSON.stringify(storedReport)).not.toContain('Report saved while offline');
+  expect(JSON.stringify(storedReport)).not.toContain('Community garden');
   expect(submissions).toBe(0);
   await context.setOffline(false);
   await expect(savedReports.getByText(/Submitted · Tracking reference/)).toBeVisible();

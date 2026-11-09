@@ -21,13 +21,26 @@ export function magicLinkCallback(path, email) {
   return `${path}${path.includes('?') ? '&' : '?'}e2e_auth_callback=${randomUUID()}#access_token=${encodeURIComponent(token)}&refresh_token=e2e-refresh&token_type=bearer&type=magiclink&expires_in=3600`;
 }
 
+async function unlockOfflineData(page) {
+  const passphrase = page.getByLabel('Offline passphrase', { exact: true });
+  if (!(await passphrase.count())) return;
+  await passphrase.fill('CivicOS-offline-test-passphrase');
+  const confirmation = page.getByLabel('Confirm offline passphrase');
+  if (await confirmation.count()) {
+    await confirmation.fill('CivicOS-offline-test-passphrase');
+  }
+  await page.getByRole('button', { name: /Set passphrase|Unlock offline data/ }).click();
+}
+
 export async function signInWithMagicLink(page, path, slug, email) {
   await page.goto(`${FRONTEND_URL}/${path}?org=${slug}`);
+  await unlockOfflineData(page);
   await expect(page.getByLabel('Organization')).toHaveAttribute('readonly', '');
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await expect(page.getByRole('status')).toContainText('one-time sign-in link has been sent');
   await page.goto(magicLinkCallback(`${FRONTEND_URL}/${path}?org=${slug}`, email));
+  await unlockOfflineData(page);
 }
 
 // Chromium does not render off-screen cross-origin iframes, so the map never finishes loading until it is scrolled into view.

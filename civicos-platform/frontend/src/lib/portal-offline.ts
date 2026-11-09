@@ -1,4 +1,8 @@
 import type { CivicRecord, Portal, Session } from './civic';
+import {
+  decryptOfflineValue, encryptOfflineValue, getOfflineCryptoKey, isOfflineCiphertext,
+  type OfflineCiphertext,
+} from './offline-security';
 
 export type PublicCalendarRequest = {
   id: string;
@@ -33,6 +37,7 @@ export type PendingPublicReport = {
   report?: PublicReport;
   reference?: string;
   error?: string;
+  locked?: boolean;
 };
 export type PortalOfflineCache = {
   portal: Portal;
@@ -49,6 +54,10 @@ export type StaffOfflineCache = {
   savedAt: string;
   page: number;
 };
+type StoredPendingPublicReport = Omit<PendingPublicReport, 'report' | 'locked'> & {
+  report?: PublicReport | OfflineCiphertext;
+};
+type StoredPortalOfflineCache = Omit<PortalOfflineCache, 'reports'> & { reports: StoredPendingPublicReport[] };
 
 const databaseName = 'civicos-offline-v1';
 const stores = ['portals', 'directories', 'staff'];
@@ -108,13 +117,56 @@ export function staffOfflineScope(authUserId: string, slug: string): string {
   return `${authUserId}:${slug}`;
 }
 
-export const readPortalCache = (slug: string) => read<PortalOfflineCache>('portals', slug);
+export async function readPortalCache(slug: string): Promise<PortalOfflineCache | undefined> {
+  const cached = await read<StoredPortalOfflineCache>('portals', slug);
+  if (!cached) return undefined;
+  const hasReportBodies = cached.reports.some(report => report.report);
+  let unlocked = true;
+  if (hasReportBodies) {
+    try { getOfflineCryptoKey(); }
+    catch { unlocked = false; }
+  }
+  if (!unlocked) return {
+    ...cached,
+    reports: cached.reports.map(({ report, ...item }) => ({ ...item, locked: !!report })),
+  };
+
+  let migrated = false;
+  const storedReports: StoredPendingPublicReport[] = [];
+  const reports: PendingPublicReport[] = [];
+  for (const item of cached.reports) {
+    if (!item.report) {
+      const { report: _report, ...metadata } = item;
+      storedReports.push(item);
+      reports.push(metadata);
+      continue;
+    }
+    if (isOfflineCiphertext(item.report)) {
+      storedReports.push(item);
+      reports.push({ ...item, report: await decryptOfflineValue<PublicReport>(item.report) });
+      continue;
+    }
+    const encrypted = await encryptOfflineValue(item.report);
+    const { report: _report, ...metadata } = item;
+    storedReports.push({ ...metadata, report: encrypted });
+    reports.push({ ...metadata, report: item.report });
+    migrated = true;
+  }
+  if (migrated) {
+    const encryptedCache = { ...cached, reports: storedReports };
+    await write('portals', slug, encryptedCache);
+    if (cached.portal.domain) {
+      await write('portals', `domain:${cached.portal.domain}`, encryptedCache);
+    }
+  }
+  return { ...cached, reports };
+}
 
 export async function savePortalSnapshot(
   slug: string,
   snapshot: Pick<PortalOfflineCache, 'portal' | 'content' | 'calendarRequests'>,
 ): Promise<PortalOfflineCache> {
-  const result = await change<PortalOfflineCache>('portals', slug, current => ({
+  const result = await change<StoredPortalOfflineCache>('portals', slug, current => ({
     ...current,
     ...snapshot,
     savedAt: new Date().toISOString(),
@@ -123,44 +175,73 @@ export async function savePortalSnapshot(
   }));
   if (!result) throw new Error('The offline portal snapshot was not saved.');
   if (snapshot.portal.domain) {
-    await change<PortalOfflineCache>('portals', `domain:${snapshot.portal.domain}`, () => result);
+    await change<StoredPortalOfflineCache>('portals', `domain:${snapshot.portal.domain}`, () => result);
   }
-  return result;
+  const hydrated = await readPortalCache(slug);
+  if (!hydrated) throw new Error('The offline portal snapshot was not saved.');
+  return hydrated;
 }
 
 export async function readPortalCacheForDomain(domain: string): Promise<PortalOfflineCache | undefined> {
-  const cached = await read<PortalOfflineCache>('portals', `domain:${domain}`);
-  return cached ? (await readPortalCache(cached.portal.slug)) || cached : undefined;
+  const cached = await read<StoredPortalOfflineCache>('portals', `domain:${domain}`);
+  return cached ? readPortalCache(cached.portal.slug) : undefined;
 }
 
 export async function savePublicRequestDetail(slug: string, detail: PublicRequestDetail): Promise<void> {
-  await change<PortalOfflineCache>('portals', slug, current => current && ({
+  await change<StoredPortalOfflineCache>('portals', slug, current => current && ({
     ...current, details: { ...current.details, [detail.id]: detail },
   }));
 }
 
-export async function queuePublicReport(slug: string, report: PublicReport): Promise<PendingPublicReport> {
+export async function queuePublicReport(slug: string, report: PublicReport, id = crypto.randomUUID()): Promise<PendingPublicReport> {
+  const encrypted = await encryptOfflineValue(report);
   const pending: PendingPublicReport = {
-    id: crypto.randomUUID(), createdAt: new Date().toISOString(), report,
+    id, createdAt: new Date().toISOString(), report,
   };
-  await change<PortalOfflineCache>('portals', slug, current => {
-    if (!current) throw new Error('Open the portal online once before saving an offline report.');
-    return { ...current, reports: [...current.reports, pending] };
+  await withPublicReportLock(slug, async () => {
+    await change<StoredPortalOfflineCache>('portals', slug, current => {
+      if (!current) throw new Error('Open the portal online once before saving an offline report.');
+      const { report: _report, ...metadata } = pending;
+      return { ...current, reports: [...current.reports, { ...metadata, report: encrypted }] };
+    });
   });
   return pending;
+}
+
+export async function saveSubmittedPublicReport(slug: string, id: string, reference: string): Promise<PendingPublicReport[]> {
+  await change<StoredPortalOfflineCache>('portals', slug, current => current && ({
+    ...current,
+    reports: [...current.reports, { id, createdAt: new Date().toISOString(), reference }],
+  }));
+  const cached = await readPortalCache(slug);
+  if (!cached) throw new Error('The tracking reference could not be saved on this device.');
+  return cached.reports;
 }
 
 export async function updatePublicReport(
   slug: string, id: string, update: (report: PendingPublicReport) => PendingPublicReport | undefined,
 ): Promise<void> {
-  await change<PortalOfflineCache>('portals', slug, current => current && ({
-    ...current,
-    reports: current.reports.flatMap(report => {
+  await withPublicReportLock(slug, async () => {
+    const stored = await read<StoredPortalOfflineCache>('portals', slug);
+    if (!stored) return;
+    const hydrated = await readPortalCache(slug);
+    if (!hydrated) return;
+    const nextReports = hydrated.reports.flatMap(report => {
       if (report.id !== id) return [report];
       const next = update(report);
       return next ? [next] : [];
-    }),
-  }));
+    });
+    const reports = await Promise.all(nextReports.map(async report => {
+      const { locked: _locked, report: body, ...metadata } = report;
+      return { ...metadata, ...(body ? { report: await encryptOfflineValue(body) } : {}) };
+    }));
+    await write('portals', slug, { ...stored, reports });
+  });
+}
+
+async function withPublicReportLock<T>(slug: string, work: () => Promise<T>): Promise<T> {
+  if (!navigator.locks) throw new Error('A current browser over HTTPS is required to safely protect saved reports.');
+  return navigator.locks.request(`civicos-public-reports:${slug}`, work);
 }
 
 export async function saveOrganizationDirectory(organizations: { name: string; slug: string }[]): Promise<void> {
@@ -177,22 +258,34 @@ export async function saveOrganizationDirectory(organizations: { name: string; s
 }
 
 export const readOrganizationDirectory = () => read<{ name: string; slug: string }[]>('directories', 'organizations');
-export const readStaffCache = (scope: string) => read<StaffOfflineCache>('staff', scope);
+export async function readStaffCache(scope: string): Promise<StaffOfflineCache | undefined> {
+  const stored = await read<StaffOfflineCache | import('./offline-security').OfflineCiphertext>('staff', scope);
+  if (!stored) return undefined;
+  if (isOfflineCiphertext(stored)) return decryptOfflineValue<StaffOfflineCache>(stored);
+  const encrypted = await encryptOfflineValue(stored);
+  await write('staff', scope, encrypted);
+  return stored;
+}
+
+async function write<T>(storeName: string, key: string, value: T): Promise<void> {
+  const db = await openDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(storeName, 'readwrite');
+      tx.objectStore(storeName).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onabort = () => reject(new Error('Offline data could not be saved.'));
+      tx.onerror = () => reject(new Error('Offline data could not be saved.'));
+    });
+  } finally { db.close(); }
+}
 
 export async function saveStaffSnapshot(
   scope: string,
   snapshot: Omit<StaffOfflineCache, 'savedAt'>,
 ): Promise<void> {
-  const db = await openDatabase();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('staff', 'readwrite');
-      tx.objectStore('staff').put({ ...snapshot, savedAt: new Date().toISOString() }, scope);
-      tx.oncomplete = () => resolve();
-      tx.onabort = () => reject(new Error('The staff offline snapshot could not be saved.'));
-      tx.onerror = () => reject(new Error('The staff offline snapshot could not be saved.'));
-    });
-  } finally { db.close(); }
+  const encrypted = await encryptOfflineValue({ ...snapshot, savedAt: new Date().toISOString() });
+  await write('staff', scope, encrypted);
 }
 
 export async function clearStaffCache(scope: string): Promise<void> {

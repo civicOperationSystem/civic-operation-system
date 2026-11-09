@@ -3,13 +3,14 @@ import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { civicApi, CivicApiError, CivicRecord, Portal as PortalData, communityMapUrl, displayDate, readPublicPhoto } from '@/lib/civic';
 import {
-  queuePublicReport, readOrganizationDirectory, readPortalCache, readPortalCacheForDomain, saveOrganizationDirectory,
-  savePortalSnapshot, savePublicRequestDetail, updatePublicReport, type PendingPublicReport, type PublicCalendarRequest,
-  type PublicReport, type PublicRequestDetail,
+  readOrganizationDirectory, readPortalCache, readPortalCacheForDomain, saveOrganizationDirectory, savePortalSnapshot, savePublicRequestDetail,
+  saveSubmittedPublicReport, updatePublicReport, type PendingPublicReport, type PublicCalendarRequest, type PublicReport, type PublicRequestDetail,
 } from '@/lib/portal-offline';
 import MapEmbed from './MapEmbed';
 import { groupPortalContent, portalContentKinds, searchOrganizations } from './portal-view-model';
 import usePublicReportSync from './usePublicReportSync';
+import useOfflinePublicReports from './useOfflinePublicReports';
+import OfflineReportSecurityDialog from './OfflineReportSecurityDialog';
 import styles from './civic.module.css';
 
 const calendarMonths = Array.from({ length: 12 }, (_, month) => month);
@@ -37,8 +38,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [submitted, setSubmitted] = useState('');
   const [anonymous, setAnonymous] = useState(true);
   const [online, setOnline] = useState(true);
-  const [offlineSnapshot, setOfflineSnapshot] = useState(false);
-  const [offlineSavedAt, setOfflineSavedAt] = useState('');
+  const [offlineSnapshot, setOfflineSnapshot] = useState(false); const [offlineSavedAt, setOfflineSavedAt] = useState('');
   const [pendingReports, setPendingReports] = useState<PendingPublicReport[]>([]);
   const [offlineShellError, setOfflineShellError] = useState('');
   async function load(nextSlug?: string, refresh = false) {
@@ -141,6 +141,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       .finally(() => { if (!abort.signal.aborted) setOrganizationsLoading(false); });
     return () => abort.abort();
   }, []);
+  const reportSecurity = useOfflinePublicReports({ slug: portal?.slug, setPendingReports });
   const syncReports = usePublicReportSync(portal?.slug, online, setPendingReports, setSubmitted, setError);
   async function report(event: FormEvent<HTMLFormElement>) {
       event.preventDefault(); setError(''); setBusy(true);
@@ -159,21 +160,32 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
           name: String(data.get('name')), email: String(data.get('email')), phone: String(data.get('phone') || ''),
         },
       };
-      let queued: PendingPublicReport;
-      try {
-        queued = await queuePublicReport(portal!.slug, report);
-      } catch (storageFailure) {
-        if (!navigator.onLine) throw storageFailure;
-        const response = await civicApi<{ reference: string }>(`/public/${portal!.slug}/requests`, {
-          method: 'POST', body: { ...report, client_operation_id: crypto.randomUUID() },
-        });
+      const operationId = crypto.randomUUID();
+      if (navigator.onLine) {
+        let response: { reference: string };
+        try {
+          response = await civicApi<{ reference: string }>(`/public/${portal!.slug}/requests`, {
+            method: 'POST', body: { ...report, client_operation_id: operationId },
+          });
+        } catch (failure) {
+          if (navigator.onLine) throw failure;
+          const saved = await reportSecurity.queue(report, operationId);
+          if (!saved) return;
+          setPendingReports(current => [...current, saved]);
+          setSubmitted(''); setPoint(null); form.reset();
+          return;
+        }
         setSubmitted(response.reference); setPoint(null); form.reset();
-        setError(`Request submitted, but offline storage is unavailable: ${storageFailure instanceof Error ? storageFailure.message : String(storageFailure)}`);
+        try { setPendingReports(await saveSubmittedPublicReport(portal!.slug, operationId, response.reference)); }
+        catch (failure) {
+          setError(`Request submitted, but its tracking reference could not be saved: ${failure instanceof Error ? failure.message : String(failure)}`);
+        }
         return;
       }
+      const queued = await reportSecurity.queue(report, operationId);
+      if (!queued) return;
       setPendingReports(current => [...current, queued]);
       setSubmitted(''); setPoint(null); form.reset();
-      if (navigator.onLine) await syncReports();
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not submit request'); }
     finally { setBusy(false); }
   }
@@ -205,6 +217,13 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       setError(failure instanceof Error ? failure.message : 'Could not retry the saved request');
     }
   }
+  async function clearOfflineData() {
+    if (await reportSecurity.clearDevice()) {
+      setOfflineSnapshot(false);
+      setOfflineSavedAt('');
+      setError('Offline data was cleared from this device.');
+    }
+  }
   const hasPoint = (item: CivicRecord) => item.longitude !== null && item.latitude !== null;
   function openOnMap(item: CivicRecord) {
     if (!hasPoint(item)) return;
@@ -212,9 +231,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
     setPublicContentDetail(null); setError(''); setView('map');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
-  const settings = portal?.settings;
-  const hubGroups = groupPortalContent(content, kind, settings?.timezone, settings?.language);
-  const visibleOrganizations = searchOrganizations(organizations, organizationQuery);
+  const settings = portal?.settings; const hubGroups = groupPortalContent(content, kind, settings?.timezone, settings?.language); const visibleOrganizations = searchOrganizations(organizations, organizationQuery);
   return <main className={styles.shell} style={{ '--civic-accent': settings?.color || '#0d9488' } as React.CSSProperties}>
     <header className={styles.header}>
       <Link href="/" className={styles.brand}>C<span>O</span> <strong>CivicOS</strong></Link>
@@ -266,9 +283,10 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       </section>
       {!!pendingReports.length && <section className={styles.card} aria-label="Saved public reports">
         <h2>Saved reports</h2>
-        <p className={styles.hint}>Unsubmitted reports are stored on this device and will be sent when a connection is available. Contact details and photos you entered are included.</p>
+        <p className={styles.hint}>Unsubmitted reports are encrypted with your offline passphrase and will be sent when a connection is available.</p>
         <ul>{pendingReports.map(report => <li key={report.id}>
-          {report.reference ? <>Submitted · Tracking reference <code>{report.reference}</code></> :
+          {report.locked ? <>Protected offline report · <button type="button" className={styles.secondary} onClick={reportSecurity.unlockSavedReports}>Unlock to send</button></> :
+          report.reference ? <>Submitted · Tracking reference <code>{report.reference}</code></> :
             report.error ? <>Needs attention · {report.error} <button type="button" className={styles.secondary} onClick={() => void retryPublicReport(report.id)}>Retry</button></> :
               <>Waiting to send · saved {new Date(report.createdAt).toLocaleString()}</>}
         </li>)}</ul>
@@ -331,7 +349,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         })()}
         {view === 'report' && <div className={styles.twoColumns}><section><p className={styles.eyebrow}>LET'S MAKE IT BETTER</p><h2>Report a community problem</h2><p className={styles.hint}>For immediate danger, contact local emergency services. This form is not monitored as an emergency line.</p>
           {submitted && <div role="status" className={styles.success}><strong>Request received.</strong><p>Save this private tracking reference for your records.</p><code>{submitted}</code></div>}
-          <form onSubmit={report} className={styles.form}>
+          <form id="portal-report-form" onSubmit={report} className={styles.form}>
             <label>Category<select name="category" required>{settings?.categories.map(category => <option key={category}>{category}</option>)}</select></label>
             <label>What happened?<textarea name="description" rows={4} required maxLength={5000} placeholder="Describe the issue and anything our team should know." /></label>
             <label>Location<input name="location" required maxLength={500} placeholder="Street, landmark, or facility" /></label>
@@ -367,8 +385,17 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
               <p className={styles.hint}>A map location was not provided for this information.</p>}</aside></div>
         </section>
       </div>}
-      {error && view !== 'report' && view !== 'map' && <p role="alert" className={styles.error}>{error}</p>}
+      {(error || reportSecurity.error) && !reportSecurity.dialogOpen && view !== 'report' && view !== 'map' && <p role="alert" className={styles.error}>{error || reportSecurity.error}</p>}
     </>}
-    <footer className={styles.footer}><strong>CivicOS</strong><span>Open infrastructure for everyday community life.</span><span>Public portal · No account required</span><span>Powered by Codyza</span></footer>
+    <footer className={styles.footer}><strong>CivicOS</strong><span>Open infrastructure for everyday community life.</span><span>Public portal · No account required</span><span>Powered by Codyza</span>
+      <button type="button" className={styles.secondary} onClick={() => void clearOfflineData()}>Clear this device’s offline data</button>
+    </footer>
+    {reportSecurity.dialogOpen && <OfflineReportSecurityDialog
+      configured={reportSecurity.configured}
+      error={reportSecurity.error}
+      onSubmit={reportSecurity.submitPassphrase}
+      onUnlocked={syncReports}
+      onClose={reportSecurity.closeDialog}
+    />}
   </main>;
 }

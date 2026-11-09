@@ -10,7 +10,7 @@
     "dev": "nodemon --exec ts-node index.ts",
     "build": "tsc && node scripts/copy-schema.mjs",
     "civic:init": "ts-node scripts/civic-init.ts",
-    "test:civic": "vitest run tests/civic.test.ts",
+    "test:civic": "vitest run tests/civic-identity.test.ts tests/civic-workflow.test.ts tests/civic-offline.test.ts tests/civic-organization.test.ts",
     "test:e2e": "vitest run .e2e.test.ts"
   },
   "keywords": [],

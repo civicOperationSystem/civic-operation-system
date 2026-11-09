@@ -2,6 +2,8 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { GeoJSONSource, GeolocateControl as GeolocateControlInstance, Map as MapInstance, Marker as MapMarker } from 'maplibre-gl';
 import { filterFeatures, isMapContext, MapCollection, MapContext, MapFeature, MapOrganization, searchMapOrganizations } from '@/lib/civic-map';
+import MapLocationDialog from './MapLocationDialog';
+import { loadMapLocationDetails, type MapLocationDetails } from '@/lib/map-location';
 import styles from '@/app/civic/map.module.css';
 
 const empty: MapCollection = { type: 'FeatureCollection', features: [] };
@@ -28,9 +30,14 @@ export default function CivicMap() {
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [mapError, setMapError] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState<MapFeature | null>(null);
+  const [locationDetails, setLocationDetails] = useState<MapLocationDetails | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedPoint, setSelectedPoint] = useState<[number, number] | null>(null);
   const [revision, setRevision] = useState(0);
+  const detailRequest = useRef<AbortController | null>(null);
   const filtered = useMemo(() => filterFeatures(data, kind, status, search), [data, kind, status, search]);
   const matchingOrganizations = useMemo(
     () => searchMapOrganizations(organizations, organizationSearch),
@@ -44,7 +51,27 @@ export default function CivicMap() {
   }
   function select(feature: MapFeature) {
     map?.flyTo({ center: feature.geometry.coordinates, zoom: 16 });
+    void showLocation(feature);
     if (feature.properties.kind === 'request') send({ type: 'civic-map-select', id: feature.properties.id });
+  }
+  async function showLocation(feature: MapFeature) {
+    setSelectedLocation(feature);
+    setLocationDetails(null);
+    setLocationError('');
+    detailRequest.current?.abort();
+    const controller = new AbortController();
+    detailRequest.current = controller;
+    const activeContext = contextRef.current;
+    if (!activeContext) return;
+    setLocationLoading(true);
+    try {
+      const details = await loadMapLocationDetails(feature, activeContext, controller.signal);
+      if (!controller.signal.aborted) setLocationDetails(details);
+    } catch (failure) {
+      if (!controller.signal.aborted) setLocationError(failure instanceof Error ? failure.message : 'Could not load location details.');
+    } finally {
+      if (!controller.signal.aborted) setLocationLoading(false);
+    }
   }
   useEffect(() => {
     const allowed = new Set((process.env.NEXT_PUBLIC_CIVIC_PARENT_ORIGINS || 'http://localhost:3100').split(',').map(value => value.trim()));
@@ -72,7 +99,7 @@ export default function CivicMap() {
     if (org && /^[a-z0-9-]{3,60}$/.test(org) && window.parent === window) {
       setSlug(org); setStandaloneSlug(org);
     }
-    return () => { window.removeEventListener('message', receive); contextRef.current = null; };
+    return () => { window.removeEventListener('message', receive); contextRef.current = null; detailRequest.current?.abort(); };
   }, []);
   useEffect(() => {
     if (!standalone) return;
@@ -125,7 +152,7 @@ export default function CivicMap() {
     let active = true;
     let current: MapInstance | undefined;
     let observer: ResizeObserver | undefined;
-    import('maplibre-gl').then(({ Map, NavigationControl, GeolocateControl, Popup, Marker, setWorkerUrl }) => {
+    import('maplibre-gl').then(({ Map, NavigationControl, GeolocateControl, Marker, setWorkerUrl }) => {
       if (!active || !container.current) return;
       setWorkerUrl(new URL('maplibre-gl/dist/maplibre-gl-worker.mjs', import.meta.url).toString());
       current = new Map({
@@ -175,18 +202,45 @@ export default function CivicMap() {
             if (active) setMapError('Could not expand this group. Use the zoom controls.');
           }
         });
+        current.on('mouseenter', 'places', event => {
+          if (contextRef.current?.locked) return;
+          const feature = event.features?.[0];
+          if (!feature || feature.geometry.type !== 'Point') return;
+          const properties = feature.properties;
+          const id = String(properties?.id || feature.id || '');
+          if (!id) return;
+          void showLocation({
+            type: 'Feature',
+            id,
+            geometry: { type: 'Point', coordinates: [feature.geometry.coordinates[0], feature.geometry.coordinates[1]] },
+            properties: {
+              id,
+              kind: String(properties?.kind || ''),
+              title: String(properties?.title || 'Community location'),
+              status: typeof properties?.status === 'string' ? properties.status : null,
+              location: typeof properties?.location === 'string' ? properties.location : null,
+            },
+          });
+        });
         current.on('click', 'places', event => {
           if (contextRef.current?.locked) return;
           const feature = event.features?.[0];
-          if (!feature || feature.geometry.type !== 'Point' || !current) return;
+          if (!feature || feature.geometry.type !== 'Point') return;
           const properties = feature.properties;
-          const element = document.createElement('div');
-          const heading = document.createElement('strong');
-          heading.textContent = String(properties?.title || 'Community location');
-          const description = document.createElement('p');
-          description.textContent = `${properties?.kind || ''}${properties?.status ? ` · ${properties.status}` : ''}`;
-          element.append(heading, description);
-          new Popup({ maxWidth: '260px' }).setLngLat([feature.geometry.coordinates[0], feature.geometry.coordinates[1]]).setDOMContent(element).addTo(current);
+          const id = String(properties?.id || feature.id || '');
+          if (!id) return;
+          void showLocation({
+            type: 'Feature',
+            id,
+            geometry: { type: 'Point', coordinates: [feature.geometry.coordinates[0], feature.geometry.coordinates[1]] },
+            properties: {
+              id,
+              kind: String(properties?.kind || ''),
+              title: String(properties?.title || 'Community location'),
+              status: typeof properties?.status === 'string' ? properties.status : null,
+              location: typeof properties?.location === 'string' ? properties.location : null,
+            },
+          });
           if (properties?.kind === 'request') send({ type: 'civic-map-select', id: properties.id });
         });
         current.on('click', event => {
@@ -230,6 +284,11 @@ export default function CivicMap() {
     }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
   }, [context, revision]);
+  useEffect(() => {
+    setSelectedLocation(null);
+    setLocationDetails(null);
+    detailRequest.current?.abort();
+  }, [context?.slug]);
   useEffect(() => {
     if (!map || !context) return;
     const interactions = [map.dragPan, map.scrollZoom, map.boxZoom, map.doubleClickZoom, map.keyboard, map.touchZoomRotate];
@@ -317,6 +376,13 @@ export default function CivicMap() {
       </aside>}
       <section className={styles.mapArea} aria-busy={!map}><div ref={container} className={styles.map} />{context?.focused ? mapError && <p className={`${styles.error} ${styles.mapError}`} role="alert">{mapError}</p> : <div className={styles.legend}><span>● Requests</span><span>● Facilities</span><span>● Infrastructure</span></div>}</section>
     </div>
+    {selectedLocation && <MapLocationDialog
+      feature={selectedLocation}
+      details={locationDetails}
+      loading={locationLoading}
+      error={locationError}
+      onClose={() => setSelectedLocation(null)}
+    />}
     {!context && <footer className={styles.footer}>Powered by Codyza</footer>}
   </main>;
 }

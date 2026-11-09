@@ -65,6 +65,8 @@ type WorkspaceViewProps = {
   setNotice: Dispatch<SetStateAction<string>>;
   staffOffline: boolean;
   networkOnline: boolean;
+  clearOfflineData(): Promise<void>;
+  lockOfflineData(): void;
   staffSnapshotSavedAt: string;
   offlineStorageWarning: string;
   busy: boolean;
@@ -104,15 +106,18 @@ export default function WorkspaceView({
   staffSnapshotSavedAt, offlineStorageWarning, busy, revision, setRevision, token, visible, nextStates,
   previousStates, canPublishTicket, fieldPhotoCount, has, login, logout, action, reconnect, selectRequest,
   transition, addNote, uploadFieldPhoto, archive, archiveContent, load, readFieldCoordinates, stateLabel,
-  memberLabel,
+  memberLabel, clearOfflineData, lockOfflineData,
 }: WorkspaceViewProps) {
   if (!field && staffOffline && session) return <main className={styles.shell} style={{ '--civic-accent': session.portal.settings.color || '#0d9488' } as CSSProperties}>
     <header className={styles.header}><Link className={styles.brand} href="/">C<span>O</span> <strong>CivicOS</strong></Link>
-      <div className={styles.headerLinks}><Link href={`/portal/${slug}`}>Public portal ↗</Link><button onClick={() => void logout()}>Sign out</button></div></header>
+      <div className={styles.headerLinks}><Link href={`/portal/${slug}`}>Public portal ↗</Link>
+        <button onClick={lockOfflineData}>Lock offline data</button>
+        <button onClick={() => void clearOfflineData()}>Clear this device’s offline data</button>
+        <button onClick={() => void logout()}>Sign out</button></div></header>
     <section className={styles.workspace}>
       <p className={styles.eyebrow}>STAFF OPERATIONS · OFFLINE</p><h1>{session.portal.name}</h1>
       <p role="status">Offline — read-only snapshot for {session.user.email}{staffSnapshotSavedAt ? ` · last refreshed ${displayDate(staffSnapshotSavedAt, session.portal.settings)}` : ''}.</p>
-      <p className={styles.hint}>This device can show only data saved during a previous online sign-in. Access may have changed since the snapshot was saved. Reconnect to verify permissions and make updates. Sign-in links require internet.</p>
+      <p className={styles.hint}>This device can show only encrypted data saved during a previous online sign-in. Access may have changed since the snapshot was saved. Reconnect to verify permissions and make updates. Sign-in links require internet.</p>
       {offlineStorageWarning && <p role="alert" className={styles.error}>{offlineStorageWarning}</p>}
       {!!records.length && <section><h2>Saved service requests</h2><div className={styles.fieldCards}>{records.map(record => <article key={record.id} className={styles.card}>
         <span className={styles.tag}>{stateLabel(record.status)}</span><h3>{record.title}</h3><p>{record.description}</p>
@@ -126,10 +131,13 @@ export default function WorkspaceView({
   </main>;
   return <main className={styles.shell} style={{ '--civic-accent': session?.portal.settings.color || '#0d9488' } as CSSProperties}>
     <header className={styles.header}><Link className={styles.brand} href="/">C<span>O</span> <strong>CivicOS</strong></Link>
-      <div className={styles.headerLinks}><Link href={`/portal/${slug}`}>Public portal ↗</Link>{session && <button disabled={busy || (field && offline.syncing)} onClick={() => void logout()}>Sign out</button>}</div></header>
+      <div className={styles.headerLinks}><Link href={`/portal/${slug}`}>Public portal ↗</Link>
+        <button onClick={lockOfflineData}>Lock offline data</button>
+        <button onClick={() => void clearOfflineData()}>Clear this device’s offline data</button>
+        {session && <button disabled={busy || (field && offline.syncing)} onClick={() => void logout()}>Sign out</button>}</div></header>
     {!field && session && <section className={styles.card}>
       <p role="status">{staffSnapshotSavedAt ? `Online · read-only offline snapshot ready (refreshed ${displayDate(staffSnapshotSavedAt, session.portal.settings)}).` : 'Preparing a read-only offline snapshot.'}</p>
-      <p className={styles.hint}>Offline access contains the most recently loaded request and organization information only. Reconnect to verify access or make changes. Use a trusted device; cached staff data is stored in this browser.</p>
+      <p className={styles.hint}>Offline access contains the most recently loaded request and organization information only, encrypted with your offline passphrase. Reconnect to verify access or make changes.</p>
       {offlineStorageWarning && <p role="alert" className={styles.error}>{offlineStorageWarning}</p>}
     </section>}
     {!session ? <section className={styles.login}><p className={styles.eyebrow}>{field ? 'FIELD WORKSPACE' : 'STAFF OPERATIONS'}</p><h1>{field ? 'Good work starts here.' : 'Your community at work.'}</h1><p className={styles.hint}>Sign in to your organization's secure workspace. Access is controlled by your role.</p>
@@ -348,4 +356,3 @@ export default function WorkspaceView({
     <footer className={styles.footer}><strong>CivicOS</strong><span>{field ? 'Field workspace' : 'Staff operations'}</span><span>Powered by Codyza</span></footer>
   </main>;
 }
-

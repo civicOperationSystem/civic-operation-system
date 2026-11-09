@@ -1,7 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async headers() {
-    return [{ source: '/field-sw.js', headers: [{ key: 'Cache-Control', value: 'no-cache' }] }];
+    return [
+      { source: '/field-sw.js', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
+    ];
   },
   async rewrites() {
     return [

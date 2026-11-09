@@ -1,4 +1,5 @@
 import type { RequestDetail, Session } from './civic';
+import type { OfflineCiphertext } from './offline-security';
 
 export type FieldUpdate =
   | { kind: 'transition'; body: { status: string; notes: string; note_visibility: 'down_chain' } }
@@ -28,36 +29,56 @@ function openDatabase(): Promise<IDBDatabase> {
 export async function readFieldCache(scope: string): Promise<FieldCache | undefined> {
   const db = await openDatabase();
   try {
-    return await new Promise<FieldCache | undefined>((resolve, reject) => {
+    const stored = await new Promise<FieldCache | OfflineCiphertext | undefined>((resolve, reject) => {
       const request = db.transaction('workspaces').objectStore('workspaces').get(scope);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(new Error('Could not read the offline workspace.'));
     });
+    if (!stored) return undefined;
+    const { getOfflineCryptoKey, isOfflineCiphertext, decryptOfflineValue } = await import('./offline-security');
+    getOfflineCryptoKey();
+    const cache = isOfflineCiphertext(stored) ? await decryptOfflineValue<FieldCache>(stored) : stored;
+    if (!isOfflineCiphertext(stored)) await putEncryptedCache(db, scope, cache);
+    return cache;
   } finally { db.close(); }
 }
 
 export async function changeFieldCache(
   scope: string, change: (cache: FieldCache | undefined) => FieldCache | undefined,
 ): Promise<FieldCache | undefined> {
-  const db = await openDatabase();
-  try {
-    return await new Promise<FieldCache | undefined>((resolve, reject) => {
-      const tx = db.transaction('workspaces', 'readwrite');
-      const store = tx.objectStore('workspaces');
-      let updated: FieldCache | undefined;
-      let failure: unknown;
-      const request = store.get(scope);
-      request.onsuccess = () => {
-        try {
-          updated = change(request.result);
-          if (updated) store.put(updated, scope); else store.delete(scope);
-        } catch (error) { failure = error; tx.abort(); }
-      };
-      tx.oncomplete = () => resolve(updated);
-      tx.onabort = () => reject(failure || new Error('Offline changes could not be saved. Device storage may be full. Your update was not queued.'));
-      tx.onerror = () => { failure = new Error('Offline changes could not be saved. Device storage may be full. Your update was not queued.'); };
-    });
-  } finally { db.close(); }
+  if (!navigator.locks) throw new Error('A current browser over HTTPS is required to safely protect offline assignments.');
+  return navigator.locks.request(`civicos-field-cache:${scope}`, async () => {
+    const current = await readFieldCache(scope);
+    const updated = change(current);
+    const db = await openDatabase();
+    try {
+      if (updated) await putEncryptedCache(db, scope, updated);
+      else await deleteCache(db, scope);
+      return updated;
+    } finally { db.close(); }
+  });
+}
+
+async function putEncryptedCache(db: IDBDatabase, scope: string, cache: FieldCache): Promise<void> {
+  const { encryptOfflineValue } = await import('./offline-security');
+  const encrypted = await encryptOfflineValue(cache);
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction('workspaces', 'readwrite');
+    transaction.objectStore('workspaces').put(encrypted, scope);
+    transaction.oncomplete = () => resolve();
+    transaction.onabort = () => reject(new Error('Offline assignments could not be encrypted and saved.'));
+    transaction.onerror = () => reject(new Error('Offline assignments could not be encrypted and saved.'));
+  });
+}
+
+async function deleteCache(db: IDBDatabase, scope: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction('workspaces', 'readwrite');
+    transaction.objectStore('workspaces').delete(scope);
+    transaction.oncomplete = () => resolve();
+    transaction.onabort = () => reject(new Error('Offline assignments could not be deleted.'));
+    transaction.onerror = () => reject(new Error('Offline assignments could not be deleted.'));
+  });
 }
 
 export async function clearFieldIdentity(authUserId: string): Promise<void> {

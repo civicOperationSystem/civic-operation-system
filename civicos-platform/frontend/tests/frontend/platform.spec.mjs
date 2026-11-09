@@ -7,6 +7,9 @@ test('platform owner creates an organization with mocked authentication and pers
   mockApi.handle('POST', '/api/civic/platform/login', () => ({ json: { token: 'frontend-platform-token' } }));
   const organizations = [];
   mockApi.handle('GET', '/api/civic/platform/organizations', () => ({ json: organizations }));
+  mockApi.handle('GET', '/api/civic/public/organizations/list', () => ({
+    json: organizations.map(({ name, slug }) => ({ name, slug })),
+  }));
   mockApi.handle('GET', '/api/civic/public/new-test-town', () => ({
     json: {
       id: 'new-town', name: 'New Test Town', slug: 'new-test-town', domain: null,
@@ -42,8 +45,8 @@ test('platform owner creates an organization with mocked authentication and pers
   );
   await page.getByRole('link', { name: 'Open community map' }).click();
   await expect(page).toHaveURL(/127\.0\.0\.1:3311\/civic\?org=new-test-town$/);
-  await expect(page.getByRole('searchbox', { name: 'Organization' })).toHaveValue('New Test Town');
+  await expect(page.getByLabel('Organization')).toHaveValue('New Test Town');
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'New Test Town', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Organization')).toHaveValue('New Test Town');
   expect(organizations).toHaveLength(1);
 });

@@ -165,6 +165,9 @@ export default function useFieldOffline(enabled: boolean) {
     scope.current = ''; access.current = ''; setCache(undefined);
     localStorage.removeItem(identityKey);
   }, []);
+  const lock = useCallback(() => {
+    scope.current = ''; access.current = ''; setCache(undefined);
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -207,7 +210,7 @@ export default function useFieldOffline(enabled: boolean) {
     return () => { active = false; clearTimeout(timer); };
   }, [enabled]);
 
-  return { cache, online, syncing, shellReady, error, open, resume, refresh, queue, sync, discard, forget, pause };
+  return { cache, online, syncing, shellReady, error, open, resume, refresh, queue, sync, discard, forget, pause, lock };
 }
 
 function appendAppliedUpdate(detail: RequestDetail, update: PendingFieldUpdate, session: Session): RequestDetail {

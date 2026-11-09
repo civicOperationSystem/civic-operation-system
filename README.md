@@ -267,7 +267,7 @@ npm run build
 
 `npm test` in `civicos-backend` includes the API end-to-end suite (`tests/*.e2e.test.ts`); run it alone with `npm run test:e2e`. The browser suite `tests/e2e/map.spec.mjs` covers map pins on public information, calendar dates and archiving, and needs internet access for map tiles.
 
-The backend tests include explicit cross-organization checks: `civic.test.ts` verifies tenant isolation for list and direct request access, assignment, tracking, unscoped SQL and forged tenant inserts. It also checks platform-owner and organization-role boundaries, unauthorized workflow transitions, field permissions, and chat visibility. `public-content-map.e2e.test.ts` checks that map content stays within its organization and that users without publish permission cannot publish map pins. These suites exercise representative API routes and database row-level security; they are not a substitute for reviewing authorization when adding or changing routes.
+The backend tests include explicit cross-organization checks across the `civic-*.test.ts` suites: they verify tenant isolation for list and direct request access, assignment, tracking, unscoped SQL and forged tenant inserts. They also check platform-owner and organization-role boundaries, unauthorized workflow transitions, field permissions, and chat visibility. `public-content-map.e2e.test.ts` checks that map content stays within its organization and that users without publish permission cannot publish map pins. These suites exercise representative API routes and database row-level security; they are not a substitute for reviewing authorization when adding or changing routes.
 
 ### Continuous integration
 

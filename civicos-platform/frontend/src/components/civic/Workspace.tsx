@@ -1,5 +1,5 @@
 'use client';
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Session as SupabaseSession } from '@supabase/supabase-js';
 import { civicApi, CivicRecord, Session, Member, RequestDetail, Portal, readFieldPhoto } from '@/lib/civic';
 import { projectFieldDetail, type FieldUpdate } from '@/lib/field-offline';
@@ -9,11 +9,12 @@ import useFieldOffline from './useFieldOffline';
 import WorkspaceView from './WorkspaceView';
 import useWorkspaceEditor from './useWorkspaceEditor';
 import useWorkspaceFieldLocation from './useWorkspaceFieldLocation';
-import {
-  offlineStaffRecord, readFieldCoordinates as parseFieldCoordinates, staffIdentityKey,
+import OfflineWorkspaceGate from './OfflineWorkspaceGate';
+import useWorkspaceOfflineSecurity from './useWorkspaceOfflineSecurity';
+import { performWorkspaceAction, sendWorkspaceLogin } from './workspace-actions';
+import { offlineStaffRecord, readFieldCoordinates as parseFieldCoordinates, staffIdentityKey,
   ticketTransitions, visibleWorkspaceRecords,
 } from './workspace-data';
-
 export default function Workspace({ field = false }: { field?: boolean }) {
   const offline = useFieldOffline(field);
   const editor = useWorkspaceEditor();
@@ -53,6 +54,17 @@ export default function Workspace({ field = false }: { field?: boolean }) {
   const exchangedToken = useRef('');
   const staffIdentity = useRef('');
   const exchangeSession = useRef<((authSession: SupabaseSession) => Promise<void>) | null>(null);
+  const clearSensitiveState = useCallback(() => {
+    exchangedToken.current = '';
+    setToken(''); setSession(null); setRecords([]); setMembers([]); setContent([]);
+    setDetail(null); setRoles({}); setEditingContent(null); setNotes('');
+    setStaffOffline(false); setStaffSnapshotSavedAt('');
+  }, []);
+  const security = useWorkspaceOfflineSecurity({
+    lockFieldCache: offline.lock,
+    clearSensitiveState,
+    setError,
+  });
   useEffect(() => {
     if (!field || !offline.cache) return;
     const current = offline.cache;
@@ -154,7 +166,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     setRevision(value => value + 1);
   }, [page, token, field, offline.refresh, slug]);
   useEffect(() => {
-    if (!slug || !isCivicSupabaseConfigured()) return;
+    if (!security.unlocked || !slug || !isCivicSupabaseConfigured()) return;
     let active = true;
     if (field && !navigator.onLine) {
       void offline.resume(slug).catch(failure => {
@@ -243,7 +255,7 @@ export default function Workspace({ field = false }: { field?: boolean }) {
       if (active) setError(failure instanceof Error ? failure.message : 'Could not restore your sign-in');
     });
     return () => { active = false; exchangeSession.current = null; subscription.unsubscribe(); };
-  }, [load, slug, field, offline.open, offline.resume, offline.sync, offline.pause, offline.online]);
+  }, [load, slug, field, offline.open, offline.resume, offline.sync, offline.pause, offline.online, security.unlocked]);
   const reconnect = useCallback(async () => {
     if (!isCivicSupabaseConfigured()) throw new Error('Authentication is not configured.');
     exchangedToken.current = '';
@@ -261,30 +273,10 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     window.addEventListener('online', connected);
     return () => window.removeEventListener('online', connected);
   }, [field, reconnect]);
-  async function login(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError(''); setBusy(true);
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    try {
-      const { error: authError } = await getCivicSupabase().auth.signInWithOtp({
-        email: String(data.get('email')).trim().toLowerCase(),
-        options: {
-          shouldCreateUser: true,
-          emailRedirectTo: `${window.location.origin}${field ? '/field' : '/staff'}?org=${encodeURIComponent(slug)}`,
-        },
-      });
-      if (authError) throw authError;
-      setNotice('If that email belongs to an active CivicOS account, a one-time sign-in link has been sent.');
-      form.reset();
-    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not send a sign-in link'); }
-    finally { setBusy(false); }
-  }
-  async function action(work: () => Promise<void>, success = 'Saved successfully') {
-    setBusy(true); setError(''); setNotice('');
-    try { await work(); setNotice(success); }
-    catch (failure) { setError(failure instanceof Error ? failure.message : 'Operation failed'); }
-    finally { setBusy(false); }
-  }
+  const login = (event: FormEvent<HTMLFormElement>) =>
+    sendWorkspaceLogin(event, field, slug, setBusy, setError, setNotice);
+  const action = (work: () => Promise<void>, success = 'Saved successfully') =>
+    performWorkspaceAction(work, success, setBusy, setError, setNotice);
   async function selectRequest(id: string) {
     await action(async () => {
       const cached = offline.cache?.details.find(item => item.id === id);
@@ -392,9 +384,17 @@ export default function Workspace({ field = false }: { field?: boolean }) {
     fieldPoint, setFieldPoint, fieldLongitude, setFieldLongitude, fieldLatitude, setFieldLatitude, editingFieldLocation, setEditingFieldLocation,
     calendarMonth, setCalendarMonth, worker, setWorker, roles, setRoles, newRole, setNewRole, editingContent, setEditingContent,
     contentLongitude, setContentLongitude, contentLatitude, setContentLatitude, contentPoint, contentMapOpen, setContentMapOpen,
-    error, setError, notice, setNotice, staffOffline, networkOnline, staffSnapshotSavedAt, offlineStorageWarning, busy, revision, setRevision,
+    error, setError, notice, setNotice, staffOffline, networkOnline,
+    clearOfflineData: security.clearOfflineData, lockOfflineData: security.lockOfflineData,
+    staffSnapshotSavedAt, offlineStorageWarning, busy, revision, setRevision,
     token, visible, nextStates, previousStates, canPublishTicket, fieldPhotoCount, has, login, logout, action, reconnect, selectRequest,
     transition, addNote, uploadFieldPhoto, archive, archiveContent, load, readFieldCoordinates, stateLabel, memberLabel,
   };
+  if (!security.unlocked) return <OfflineWorkspaceGate
+    configured={security.configured}
+    error={security.error}
+    submitPassphrase={security.submitPassphrase}
+    onClear={security.clearDeviceData}
+  />;
   return <WorkspaceView {...viewProps} />;
 }
