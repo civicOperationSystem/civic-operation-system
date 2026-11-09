@@ -158,6 +158,37 @@ test('stale queued work is retained for review instead of overwriting dispatch c
   await expect(page.getByText(/^Online · 0 pending updates/)).toBeVisible();
 });
 
+test('field sync keeps queued updates after a server error and retries them exactly once', async ({ page, context, request }) => {
+  await signInWithMagicLink(page, 'field', slug, workerEmail);
+  await expect(page.getByText('Online · 0 pending updates')).toBeVisible();
+  await context.setOffline(true);
+  await page.getByRole('button', { name: /Open to add completion photo and map pin/ }).click();
+  await page.getByLabel('Private note', { exact: true }).fill('Retry after server recovery');
+  await page.getByRole('button', { name: 'Add private note', exact: true }).click();
+  await expect(page.getByText('Offline — using saved assignments · 1 pending updates')).toBeVisible();
+
+  let failedOnce = false;
+  await page.route(`**/staff/requests/${requestId}/notes`, async route => {
+    if (!failedOnce) {
+      failedOnce = true;
+      await route.fulfill({ status: 503, json: { message: 'Temporary server error' } });
+      return;
+    }
+    await route.continue();
+  });
+  await context.setOffline(false);
+  await expect.poll(() => failedOnce).toBe(true);
+  await expect(page.getByText('Online · 1 pending updates')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sync pending updates', exact: true })).toBeEnabled();
+
+  await page.getByRole('button', { name: 'Sync pending updates', exact: true }).click();
+  await expect(page.getByText(/^Online · 0 pending updates/)).toBeVisible({ timeout: 60000 });
+  const response = await request.get(`${api}/staff/requests/${requestId}`, { headers: { Authorization: `****** } });
+  expect(response.status()).toBe(200);
+  const detail = await response.json();
+  expect(detail.history.filter(item => item.notes === 'Retry after server recovery')).toHaveLength(1);
+});
+
 test('public portal opens offline and submits a queued report once reconnected', async ({ page, context }) => {
   await page.goto(`http://127.0.0.1:3310/portal/${slug}`);
   await expect(page.getByRole('heading', { name: 'Offline Test Town' })).toBeVisible();

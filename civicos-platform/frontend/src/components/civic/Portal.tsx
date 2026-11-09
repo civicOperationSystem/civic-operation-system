@@ -3,10 +3,11 @@ import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { civicApi, CivicApiError, CivicRecord, Portal as PortalData, communityMapUrl, displayDate, readPublicPhoto } from '@/lib/civic';
 import {
-  readOrganizationDirectory, readPortalCache, readPortalCacheForDomain, saveOrganizationDirectory, savePortalSnapshot, savePublicRequestDetail,
+  readPortalCache, readPortalCacheForDomain, savePortalSnapshot, savePublicRequestDetail,
   saveSubmittedPublicReport, updatePublicReport, type PendingPublicReport, type PublicCalendarRequest, type PublicReport, type PublicRequestDetail,
 } from '@/lib/portal-offline';
 import MapEmbed from './MapEmbed';
+import usePublicOrganizationDirectory from './usePublicOrganizationDirectory';
 import { groupPortalContent, portalContentKinds, searchOrganizations } from './portal-view-model';
 import usePublicReportSync from './usePublicReportSync';
 import useOfflinePublicReports from './useOfflinePublicReports';
@@ -16,12 +17,11 @@ import styles from './civic.module.css';
 const calendarMonths = Array.from({ length: 12 }, (_, month) => month);
 export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [slug, setSlug] = useState(initialSlug);
-  const [organizations, setOrganizations] = useState<{ name: string; slug: string }[]>([]);
-  const [organizationsLoading, setOrganizationsLoading] = useState(true);
-  const [organizationsError, setOrganizationsError] = useState('');
+  const { organizations, organizationsLoading, organizationsError, retryOrganizations } = usePublicOrganizationDirectory();
   const [organizationSearch, setOrganizationSearch] = useState('');
   const [organizationQuery, setOrganizationQuery] = useState('');
   const [portal, setPortal] = useState<PortalData | null>(null);
+  const [initialPortalLoading, setInitialPortalLoading] = useState(true);
   const [content, setContent] = useState<CivicRecord[]>([]);
   const [calendarRequests, setCalendarRequests] = useState<PublicCalendarRequest[]>([]);
   const [publicRequestDetail, setPublicRequestDetail] = useState<PublicRequestDetail | null>(null);
@@ -116,31 +116,9 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   }, []);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    void load(initialSlug || params.get('org') || undefined);
+    void load(initialSlug || params.get('org') || undefined)
+      .finally(() => setInitialPortalLoading(false));
   }, [initialSlug]);
-  useEffect(() => {
-    const abort = new AbortController();
-    void civicApi<{ name: string; slug: string }[]>('/public/organizations/list', { signal: abort.signal })
-      .then(async items => {
-        if (!Array.isArray(items) || items.some(item => !item || typeof item.name !== 'string' || typeof item.slug !== 'string')) {
-          throw new Error('The organization directory returned invalid data. Check the backend deployment.');
-        }
-        await saveOrganizationDirectory(items);
-        if (!abort.signal.aborted) setOrganizations(items);
-      })
-      .catch(async failure => {
-        if (abort.signal.aborted) return;
-        try {
-          const cached = await readOrganizationDirectory();
-          if (cached) setOrganizations(cached);
-          else setOrganizationsError(failure instanceof Error ? failure.message : 'Could not load organizations');
-        } catch (cacheFailure) {
-          setOrganizationsError(cacheFailure instanceof Error ? cacheFailure.message : 'Could not read the saved organization directory');
-        }
-      })
-      .finally(() => { if (!abort.signal.aborted) setOrganizationsLoading(false); });
-    return () => abort.abort();
-  }, []);
   const reportSecurity = useOfflinePublicReports({ slug: portal?.slug, setPendingReports });
   const syncReports = usePublicReportSync(portal?.slug, online, setPendingReports, setSubmitted, setError);
   async function report(event: FormEvent<HTMLFormElement>) {
@@ -243,7 +221,11 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         ? `Offline — showing saved public information${offlineSavedAt ? ` from ${displayDate(offlineSavedAt, portal.settings)}` : ''}.`
         : 'Public information is saved on this device for offline viewing.'}
     </p>}
-    {!portal ? <section className={styles.welcome}>
+    {!portal && initialPortalLoading ? <section className={styles.welcome} aria-busy="true">
+      <p className={styles.eyebrow}>YOUR COMMUNITY, CONNECTED</p>
+      <h1>Loading your community…</h1>
+      <p role="status">Loading public information. This usually takes a moment.</p>
+    </section> : !portal ? <section className={styles.welcome}>
       <p className={styles.eyebrow}>ONE COMMUNITY. ONE CONNECTED PLATFORM.</p>
       <h1>Everyday services.<br />A stronger community.</h1>
       <p>Find local information, report a problem, and follow the work that matters to your community.</p>
@@ -254,7 +236,12 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         </datalist>
         <button disabled={organizationsLoading || !!organizationsError} className={styles.primary}>Search</button>
       </form>
-      {organizationsError && <p role="alert" className={styles.error}>{organizationsError}</p>}
+      {organizationsError && <div>
+        <p role="alert" className={styles.error}>{organizationsError}</p>
+        <button type="button" className={styles.secondary} onClick={retryOrganizations}>
+          Retry loading organizations
+        </button>
+      </div>}
       {organizationsLoading && <p role="status">Loading organizations…</p>}
       {!organizationsLoading && !organizationsError && <section className={styles.directory} aria-label="Available organizations">
         <h2>Available organizations</h2>

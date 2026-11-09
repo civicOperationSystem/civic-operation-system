@@ -31,6 +31,34 @@ test('directory search opens the selected public portal', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Staff sign in' })).toHaveAttribute('href', `/staff?org=${portal.slug}`);
 });
 
+test('direct community navigation shows a loading state until portal data arrives', async ({ page, mockApi }) => {
+  let releasePortal;
+  const portalResponse = new Promise(resolve => { releasePortal = resolve; });
+  mockApi.handle('GET', `/api/civic/public/${portal.slug}`, async () => {
+    await portalResponse;
+    return { json: portal };
+  });
+
+  await page.goto(`/portal/${portal.slug}`);
+  await expect(page.getByRole('status')).toHaveText('Loading public information. This usually takes a moment.');
+  releasePortal();
+  await expect(page.getByRole('heading', { name: portal.name, exact: true })).toBeVisible();
+});
+
+test('organization directory errors can be retried without reloading the public site', async ({ page, mockApi }) => {
+  mockApi.handle('GET', '/api/civic/public/organizations/list', () => ({
+    status: 503, json: { message: 'Directory temporarily unavailable' },
+  }));
+  await page.goto('/portal');
+  await expect(page.getByRole('alert').filter({ hasText: 'Directory temporarily unavailable' })).toBeVisible();
+
+  mockApi.handle('GET', '/api/civic/public/organizations/list', () => ({
+    json: [{ name: portal.name, slug: portal.slug }],
+  }));
+  await page.getByRole('button', { name: 'Retry loading organizations' }).click();
+  await expect(page.getByRole('link', { name: `Open ${portal.name} portal` })).toBeVisible();
+});
+
 test('resident submits a report through the mocked API', async ({ page, mockApi }) => {
   let submitted;
   const reference = 'AAAA-BBBB-CCCC-DDDD-EEEE-FFFF-0000-1111';
