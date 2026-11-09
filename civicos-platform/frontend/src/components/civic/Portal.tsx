@@ -8,6 +8,7 @@ import {
 } from '@/lib/portal-offline';
 import MapEmbed from './MapEmbed';
 import PortalInitialLoading from './PortalInitialLoading';
+import useInitialPortalLoad from './useInitialPortalLoad';
 import usePublicOrganizationDirectory from './usePublicOrganizationDirectory';
 import { groupPortalContent, portalContentKinds, searchOrganizations } from './portal-view-model';
 import usePublicReportSync from './usePublicReportSync';
@@ -16,14 +17,12 @@ import OfflineReportSecurityDialog from './OfflineReportSecurityDialog';
 import styles from './civic.module.css';
 
 const calendarMonths = Array.from({ length: 12 }, (_, month) => month);
-const initialPortalLoadTimeoutMs = 10000;
 export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
   const [slug, setSlug] = useState(initialSlug);
   const { organizations, organizationsLoading, organizationsError, retryOrganizations } = usePublicOrganizationDirectory();
   const [organizationSearch, setOrganizationSearch] = useState('');
   const [organizationQuery, setOrganizationQuery] = useState('');
   const [portal, setPortal] = useState<PortalData | null>(null);
-  const [initialPortalLoading, setInitialPortalLoading] = useState(true);
   const [content, setContent] = useState<CivicRecord[]>([]);
   const [calendarRequests, setCalendarRequests] = useState<PublicCalendarRequest[]>([]);
   const [publicRequestDetail, setPublicRequestDetail] = useState<PublicRequestDetail | null>(null);
@@ -70,6 +69,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       document.documentElement.lang = org.settings.language;
       document.title = `${org.name} | CivicOS`;
     } catch (failure) {
+      if (signal?.aborted) return;
       if (refresh) {
         setError(failure instanceof Error ? failure.message : 'Could not refresh portal');
         return;
@@ -96,18 +96,7 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
         setError(cacheFailure instanceof Error ? cacheFailure.message : 'Could not read the saved portal');
       }
     }
-    finally { setBusy(false); }
-  }
-  function loadInitialPortal() {
-    const params = new URLSearchParams(window.location.search);
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), initialPortalLoadTimeoutMs);
-    setInitialPortalLoading(true);
-    void load(initialSlug || params.get('org') || undefined, false, controller.signal)
-      .finally(() => {
-        window.clearTimeout(timeout);
-        setInitialPortalLoading(false);
-      });
+    finally { if (!signal?.aborted) setBusy(false); }
   }
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -129,9 +118,11 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       });
     return () => { active = false; };
   }, []);
-  useEffect(() => {
-    loadInitialPortal();
-  }, [initialSlug]);
+  const { loading: initialPortalLoading, retry: retryInitialPortal } =
+    useInitialPortalLoad(initialSlug, load, () => {
+      setBusy(false);
+      setError('Loading the community timed out. Check your connection and try again.');
+    });
   const reportSecurity = useOfflinePublicReports({ slug: portal?.slug, setPendingReports });
   const syncReports = usePublicReportSync(portal?.slug, online, setPendingReports, setSubmitted, setError);
   async function report(event: FormEvent<HTMLFormElement>) {
@@ -265,7 +256,9 @@ export default function Portal({ initialSlug = '' }: { initialSlug?: string }) {
       </section>}
       {error && <>
         <p role="alert" className={styles.error}>{error}</p>
-        <button type="button" className={styles.secondary} onClick={loadInitialPortal}>Retry loading community</button>
+        <button type="button" className={styles.secondary} onClick={retryInitialPortal}>
+          Retry loading community
+        </button>
       </>}
     </section> : <>
       <section className={styles.hero}>
