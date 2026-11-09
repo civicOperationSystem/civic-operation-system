@@ -127,6 +127,9 @@ jobs:
       - name: Run frontend-only Playwright
         working-directory: civicos-platform/frontend
         run: npm run test:e2e
+      - name: Run production CSP Playwright
+        working-directory: civicos-platform/frontend
+        run: npm run test:csp
       - name: Run integration Playwright
         working-directory: civicos-platform/frontend
         run: npm run test:e2e:integration

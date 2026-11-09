@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "test:e2e": "playwright test --config playwright.frontend.config.mjs",
+    "test:csp": "playwright test --config playwright.csp.config.mjs",
     "test:e2e:integration": "playwright test --config playwright.config.mjs"
   },
   "dependencies": {
