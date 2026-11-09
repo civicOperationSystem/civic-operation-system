@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { filterFeatures, isMapContext, searchMapOrganizations } from '../lib/civic-map.ts';
+import { readMapApiResponse } from '../lib/map-api.ts';
 
 test('map context rejects tokens in URLs and malformed coordinates or messages', () => {
   const valid = { type: 'civic-map-context', slug: 'town-a', center: [-73, 40], token: null, selectable: false };
@@ -45,4 +46,10 @@ test('organization suggestions filter by typed community name or slug', () => {
   assert.deepEqual(searchMapOrganizations(organizations, 'river'), [organizations[1]]);
   assert.deepEqual(searchMapOrganizations(organizations, 'FRONTEND-TOWN'), [organizations[0]]);
   assert.deepEqual(searchMapOrganizations(organizations, 'missing'), []);
+});
+test('plain-text proxy errors produce a service message instead of a JSON parser exception', async () => {
+  await assert.rejects(
+    readMapApiResponse(new Response('Internal Server Error', { status: 500 }), 'Could not load map data'),
+    /Could not load map data \(HTTP 500\)/,
+  );
 });

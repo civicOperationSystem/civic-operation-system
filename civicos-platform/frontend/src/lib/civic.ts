@@ -51,8 +51,17 @@ export async function civicApi<T>(path: string, options: { token?: string; metho
     ...(options.signal ? { signal: options.signal } : {}),
     cache: 'no-store',
   });
-  const body = await response.json();
-  if (!response.ok) throw new CivicApiError(body.message || `Operation failed (${response.status})`, response.status);
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new CivicApiError(`The service returned an invalid response (${response.status}). Please try again.`, response.status);
+  }
+  if (!response.ok) {
+    const message = body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
+      ? body.message : `Operation failed (${response.status})`;
+    throw new CivicApiError(message, response.status);
+  }
   return body as T;
 }
 export function displayDate(date: string, settings: Settings): string {

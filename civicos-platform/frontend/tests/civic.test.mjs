@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { civicApi, displayDate, readPhoto, readPublicPhoto, readFieldPhoto, fieldCanEnter } from '../src/lib/civic.ts';
+import { CivicApiError, civicApi, displayDate, readPhoto, readPublicPhoto, readFieldPhoto, fieldCanEnter } from '../src/lib/civic.ts';
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -26,6 +26,15 @@ test('public tracking sends capability in a POST body and surfaces errors', asyn
     return new Response(JSON.stringify({ message: 'Request not found' }), { status: 404 });
   };
   await assert.rejects(civicApi('/public/town-a/track', { method: 'POST', body: { reference: 'private-reference' } }), /Request not found/);
+});
+test('non-JSON proxy failures produce a useful service error instead of a JSON parser exception', async () => {
+  globalThis.fetch = async () => new Response('Internal Server Error', {
+    status: 500, headers: { 'Content-Type': 'text/plain' },
+  });
+  await assert.rejects(
+    civicApi('/public/portal'),
+    error => error instanceof CivicApiError && error.status === 500 && /invalid response \(500\)/.test(error.message),
+  );
 });
 test('dates respect organization locale and timezone', () => {
   const settings = { language: 'en-US', timezone: 'America/New_York' };

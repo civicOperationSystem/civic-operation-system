@@ -2,6 +2,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { GeoJSONSource, GeolocateControl as GeolocateControlInstance, Map as MapInstance, Marker as MapMarker } from 'maplibre-gl';
 import { filterFeatures, isMapContext, MapCollection, MapContext, MapFeature, MapOrganization, searchMapOrganizations } from '@/lib/civic-map';
+import { readMapApiResponse } from '@/lib/map-api';
 import MapLocationDialog from './MapLocationDialog';
 import { loadMapLocationDetails, type MapLocationDetails } from '@/lib/map-location';
 import styles from '@/app/civic/map.module.css';
@@ -107,8 +108,7 @@ export default function CivicMap() {
     setOrganizationsLoading(true);
     void fetch('/api/civic/public/organizations/list', { signal: abort.signal, cache: 'no-store' })
       .then(async response => {
-        const items: unknown = await response.json();
-        if (!response.ok) throw new Error('Could not load organizations');
+        const items = await readMapApiResponse<unknown>(response, 'Could not load organizations');
         if (!Array.isArray(items) || items.some(item =>
           !item || typeof item.name !== 'string' || typeof item.slug !== 'string')) {
           throw new Error('The organization directory returned invalid data.');
@@ -134,8 +134,8 @@ export default function CivicMap() {
     setError(''); setLoading(true);
     void fetch(`/api/civic/public/${encodeURIComponent(standaloneSlug)}`, { signal: abort.signal, cache: 'no-store' })
       .then(async response => {
-        const portal = await response.json();
-        if (!response.ok) throw new Error(portal.message || 'Could not load community map settings');
+        const portal = await readMapApiResponse<{ settings?: { center?: [number, number]; zoom?: number } }>(
+          response, 'Could not load community map settings');
         const next = { type: 'civic-map-context', slug: standaloneSlug, token: null,
           center: portal.settings?.center, zoom: portal.settings?.zoom ?? 12, selectable: false };
         if (!isMapContext(next)) throw new Error('Invalid community map settings');
@@ -275,8 +275,7 @@ export default function CivicMap() {
       headers: context.token ? { Authorization: `Bearer ${context.token}` } : {},
       signal: abort.signal, cache: 'no-store',
     }).then(async response => {
-      const collection = await response.json();
-      if (!response.ok) throw new Error(collection.message || 'Could not load authorized map data');
+      const collection = await readMapApiResponse<MapCollection>(response, 'Could not load authorized map data');
       if (collection.type !== 'FeatureCollection' || !Array.isArray(collection.features)) throw new Error('Invalid map data received');
       if (!abort.signal.aborted) setData(collection);
     }).catch(failure => {
