@@ -152,16 +152,16 @@ test('resident → staff → mobile field → verification → private-safe trac
       name: `field-photo-${index}.png`, mimeType: 'image/png', buffer: Buffer.concat([png, Buffer.alloc(2 * 1024 * 1024)]),
     });
     await expect(field.getByAltText(`Field work photo ${index + 1}`)).toBeVisible();
-    await expect(field.getByText(/^Online · 0 pending updates/)).toBeVisible();
+    await expect(field.getByText('Online · 0 pending updates', { exact: true })).toBeVisible();
   }
   await expect(field.getByLabel('Upload completion photo (3/3)')).toBeDisabled();
   await field.getByLabel('Private note', { exact: true }).fill('Crew began work');
   await field.getByRole('button', { name: 'Start work', exact: true }).click();
   await expect(field.getByText('Update saved on this device. Check pending updates for sync status.', { exact: true })).toBeVisible();
-  await expect(field.getByText(/^Online · 0 pending updates/)).toBeVisible();
+  await expect(field.getByText('Online · 0 pending updates', { exact: true })).toBeVisible();
   await field.getByRole('button', { name: 'Complete work', exact: true }).click();
   await expect(field.getByRole('button', { name: 'Complete work', exact: true })).toHaveCount(0);
-  await expect(field.getByText(/^Online · 0 pending updates/)).toBeVisible();
+  await expect(field.getByText('Online · 0 pending updates', { exact: true })).toBeVisible();
   await expect(field.getByRole('button', { name: 'Move to Verified' })).toHaveCount(0);
   const calendar = await (await page.request.get(`/api/civic/public/${slug}/requests/calendar`)).json();
   const publicId = calendar.find(record => record.title === 'Pothole').id;

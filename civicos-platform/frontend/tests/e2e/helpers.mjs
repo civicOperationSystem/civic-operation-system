@@ -21,15 +21,16 @@ export function magicLinkCallback(path, email) {
   return `${path}${path.includes('?') ? '&' : '?'}e2e_auth_callback=${randomUUID()}#access_token=${encodeURIComponent(token)}&refresh_token=e2e-refresh&token_type=bearer&type=magiclink&expires_in=3600`;
 }
 
-async function unlockOfflineData(page) {
+export async function unlockOfflineData(page) {
   const passphrase = page.getByLabel('Offline passphrase', { exact: true });
-  if (!(await passphrase.count())) return;
+  await expect(passphrase).toBeVisible();
   await passphrase.fill('CivicOS-offline-test-passphrase');
   const confirmation = page.getByLabel('Confirm offline passphrase');
   if (await confirmation.count()) {
     await confirmation.fill('CivicOS-offline-test-passphrase');
   }
   await page.getByRole('button', { name: /Set passphrase|Unlock offline data/ }).click();
+  await expect(passphrase).toBeHidden();
 }
 
 export async function signInWithMagicLink(page, path, slug, email) {

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { MAP_FRAME, magicLinkToken, signInWithMagicLink, waitForMap } from './helpers.mjs';
+import { MAP_FRAME, magicLinkToken, signInWithMagicLink, unlockOfflineData, waitForMap } from './helpers.mjs';
 
 // Runs in its own organization so pinned information does not change the location counts asserted in civic.spec.mjs.
 const api = `${process.env.CIVIC_API_URL}/api/civic`;
@@ -56,6 +56,7 @@ test('bottom administrator chooses and saves the community map view for embedded
   await page.getByRole('button', { name: 'Save organization settings', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Organization settings updated' })).toBeVisible();
   await page.reload();
+  await unlockOfflineData(page);
   await page.getByRole('button', { name: 'Organization settings', exact: true }).click();
   await expect(longitude).toHaveValue(String(center[0]));
   await expect(latitude).toHaveValue(String(center[1]));
